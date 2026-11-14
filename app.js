@@ -1,4 +1,4 @@
-/* RUMAHKU-ONE Lite v0.2 — UI. Data: penyimpanan lokal + (opsional) file pribadi di Google Drive. */
+/* RUMAHKU-ONE Lite v0.3 — UI. Data: penyimpanan lokal + (opsional) file pribadi di Google Drive. */
 (function () {
   'use strict';
   const C = Core;
@@ -30,7 +30,7 @@
   let store = readJSON(LS);
   if (!C.validStore(store)) store = C.emptyStore();
   let cfg = readJSON(CFG) || {};
-  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null };
+  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, cardCat: null, cardShift: 0 };
   let syncMsg = '', syncing = false, syncAgain = false, syncTimer = null, ignorePop = false;
 
   function persist() { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) { toast('Penyimpanan penuh/tidak tersedia: ekspor backup sekarang'); } }
@@ -120,10 +120,13 @@
       { k: 'title', label: 'Judul', req: true }, { k: 'due', label: 'Tenggat', type: 'date' },
       { k: 'repeat', label: 'Pengulangan', type: 'select', opts: REPEATS },
       { k: 'prio', label: 'Prioritas', type: 'select', opts: [['0', 'Biasa'], ['1', 'Penting']] },
-      { k: 'label', label: 'Label / proyek' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
-    ], { title: t.title, due: t.due || '', repeat: t.repeat || 'none', prio: t.prio || '0', label: t.label, notes: t.notes }, (v) => {
+      { k: 'time', label: 'Jam (opsional, untuk pengingat)', type: 'time' }, { k: 'remind', label: 'Pengingat', type: 'select', opts: REMIND_OPTS },
+      { k: 'label', label: 'Label / proyek (mis. Pekerjaan)', list: ['Pekerjaan', 'Rumah', 'Keluarga', 'Pribadi'] }, { k: 'notes', label: 'Catatan', type: 'textarea' },
+    ], { title: t.title, due: t.due || '', time: t.time || '', remind: t.remind == null ? '' : t.remind, repeat: t.repeat || 'none', prio: t.prio || '0', label: t.label, notes: t.notes }, (v) => {
       if (v.repeat !== 'none' && !v.due) return 'Tugas berulang perlu tenggat.';
-      C.put(store, 'task', { id: t.id, title: v.title, due: v.due || '', repeat: v.repeat, prio: v.prio, label: v.label, notes: v.notes, anchorDay: v.due ? C.parseD(v.due).getDate() : undefined, done: t.done || false, doneLog: t.doneLog });
+      if (v.time && !v.due) return 'Jam butuh tanggal tenggat.';
+      if (v.remind !== '' && !v.time) return 'Pengingat butuh jam. Isi jam, atau pilih "Tanpa pengingat".';
+      C.put(store, 'task', { id: t.id, title: v.title, due: v.due || '', time: v.time, remind: v.remind, repeat: v.repeat, prio: v.prio, label: v.label, notes: v.notes, anchorDay: v.due ? C.parseD(v.due).getDate() : undefined, done: t.done || false, doneLog: t.doneLog });
       commit();
     }, t.id ? [{ label: 'Hapus tugas', fn: () => { C.remove(store, t.id); commit(); } }] : null);
   }
@@ -137,10 +140,11 @@
     openForm(ev.id ? 'Ubah acara' : 'Acara baru', [
       { k: 'title', label: 'Judul', req: true }, { k: 'date', label: 'Tanggal', type: 'date', req: true },
       { k: 'allDay', label: 'Sepanjang hari', type: 'check' }, { k: 'time', label: 'Jam mulai', type: 'time' },
+      { k: 'remind', label: 'Pengingat (acara ber-jam)', type: 'select', opts: REMIND_OPTS },
       { k: 'repeat', label: 'Pengulangan', type: 'select', opts: REPEATS }, { k: 'until', label: 'Berulang sampai (opsional)', type: 'date' },
       { k: 'notes', label: 'Catatan', type: 'textarea' },
-    ], { title: ev.title, date: ev.date || ui.calSel || C.today(), allDay: ev.allDay !== false && !ev.time, time: ev.time, repeat: ev.repeat || 'none', until: ev.until, notes: ev.notes }, (v) => {
-      C.put(store, 'event', { id: ev.id, title: v.title, date: v.date, allDay: v.allDay, time: v.allDay ? '' : v.time, repeat: v.repeat, until: v.until || '', notes: v.notes, skip: ev.skip });
+    ], { title: ev.title, date: ev.date || ui.calSel || C.today(), allDay: ev.allDay !== false && !ev.time, time: ev.time, remind: ev.remind == null ? '10' : ev.remind, repeat: ev.repeat || 'none', until: ev.until, notes: ev.notes }, (v) => {
+      C.put(store, 'event', { id: ev.id, title: v.title, date: v.date, allDay: v.allDay, time: v.allDay ? '' : v.time, remind: v.remind, repeat: v.repeat, until: v.until || '', notes: v.notes, skip: ev.skip });
       commit();
     }, extras);
   }
@@ -301,6 +305,14 @@
       commit(); toast('Tagihan dibayar ✓');
     });
   }
+  function billTemplateForm() {
+    openForm('Pilih tagihan rutin', BILL_NAMES.map((n, i) => ({ k: 'b' + i, label: n, type: 'check' })).concat([{ k: 'dueDay', label: 'Tanggal jatuh tempo sementara (1–31, ubah nanti per tagihan)', type: 'number', req: true }]), { dueDay: 20 }, (v) => {
+      const d = +v.dueDay; if (!(d >= 1 && d <= 31)) return 'Tanggal harus 1–31.';
+      let n = 0; BILL_NAMES.forEach((name, i) => { if (v['b' + i]) { n++; C.put(store, 'bill', { name, amountEst: 0, dueDay: d }); } });
+      if (!n) return 'Centang minimal satu.';
+      commit(); toast(n + ' tagihan ditambahkan; isi nominal & tanggal asli lewat ketuk nama tagihan');
+    });
+  }
   // --- Rumah: aset, stok, kontak, dokumen ---
   function assetForm(a) {
     a = a || {};
@@ -338,7 +350,7 @@
       { k: 'expiry', label: 'Berlaku sampai / kedaluwarsa', type: 'date' }, { k: 'place', label: 'Disimpan di mana (laci, brankas, folder…)' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
     ], d, (v) => { C.put(store, 'doc', { id: d.id, title: v.title, expiry: v.expiry, place: v.place, notes: v.notes }); commit(); },
     d.id ? [{ label: 'Hapus dokumen', fn: () => { C.remove(store, d.id); commit(); } }] : null,
-    'Catat lokasi & masa berlaku saja. Jangan simpan nomor KTP/paspor/rekening di sini: data belum dienkripsi ujung-ke-ujung.');
+    'Catat lokasi & masa berlaku saja. Nomor KTP/NPWP anggota keluarga disimpan di menu Keluarga (tersembunyi di layar, belum terenkripsi).');
   }
   function journalForm(j) {
     j = j || {};
@@ -355,11 +367,256 @@
       h.id ? [{ label: 'Hapus kebiasaan', fn: () => { C.remove(store, h.id); commit(); } }] : null);
   }
 
+  // ---------- v0.3: profil, rutinitas, keluarga, afeksi ----------
+  const REL = ['Istri', 'Suami', 'Pasangan', 'Anak', 'Orang tua', 'Mertua', 'Saudara', 'Lainnya'];
+  const ID_KINDS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan', 'Akta lahir', 'Lainnya'];
+  const FILE_LABELS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'Akta lahir', 'Foto', 'Lainnya'];
+  const RT_EMOJI = ['💧', '💊', '🏃', '👀', '💌', '📖', '🧘', '🍎', '😴', '⭐'];
+  const RT_TEMPLATES = [
+    { name: 'Minum air 2 liter', emoji: '💧', target: 8, unit: 'gelas (250 ml)', from: '08:00', to: '20:00', everyMin: 60, days: [] },
+    { name: 'Vitamin / obat pagi', emoji: '💊', target: 1, unit: 'kali', from: '07:00', to: '', everyMin: 0, days: [] },
+    { name: 'Olahraga ringan', emoji: '🏃', target: 1, unit: 'sesi', from: '17:00', to: '', everyMin: 0, days: [] },
+    { name: 'Istirahat mata & regangkan badan', emoji: '👀', target: 6, unit: 'kali', from: '09:00', to: '16:00', everyMin: 60, days: [1, 2, 3, 4, 5] },
+    { name: 'Kabari keluarga', emoji: '💌', target: 1, unit: 'kabar', from: '12:30', to: '', everyMin: 0, days: [] },
+    { name: 'Baca buku 15 menit', emoji: '📖', target: 1, unit: 'sesi', from: '20:30', to: '', everyMin: 0, days: [] },
+  ];
+  const DRAFTS = {
+    pasangan: [
+      'Sayang, aku sudah di jalan pulang ya. Mau dibawakan sesuatu, {nama}? 😊',
+      'Hari ini lagi padat, tapi kamu tetap yang pertama kuingat. Nanti kutelepon begitu longgar ya ❤️',
+      'Sudah makan siang belum, {nama}? Jangan telat makan ya, aku peduli sama kamu.',
+      'Terima kasih sudah mengurus rumah dan keluarga kita dengan sabar. Aku bersyukur punya kamu.',
+      'Semangat hari ini, {nama}. Kamu hebat. Kalau capek, ingat ada aku di sini.',
+      'Maaf, hari ini aku pulang agak malam. Kamu istirahat duluan, jangan menungguku ya.',
+      'Malam ini ngobrol berdua yuk, tanpa HP. Aku kangen ceritamu.',
+      'Selamat istirahat, {nama}. Terima kasih untuk hari ini. Sampai besok ❤️',
+    ],
+    anak: [
+      'Hai {nama}, {sebutan} kangen. Hari ini sekolahnya seru? Nanti cerita ya.',
+      'Jangan lupa makan dan minum air putih ya, {nama}. {sebutan} sayang kamu.',
+      '{nama}, {sebutan} bangga sama usahamu hari ini, apa pun hasilnya.',
+      'Semangat ya, {nama}! Kamu sudah belajar, tinggal percaya diri.',
+      '{sebutan} pulang agak telat. Kerjakan PR dan sikat gigi dulu ya, {nama}.',
+      'Selamat tidur, {nama}. Mimpi indah ya. {sebutan} sayang kamu.',
+    ],
+    ortu: [
+      'Apa kabar, {nama}? Semoga sehat selalu. Aku kangen, akhir pekan ini aku telepon ya.',
+      'Terima kasih atas doa dan didikan {nama} selama ini. Aku selalu ingat.',
+      'Sudah makan dan minum obat, {nama}? Jaga kesehatan ya, kabari kalau butuh apa-apa.',
+      'Kami di sini sehat semua, {nama}. Jangan khawatir ya. Salam dari kami semua.',
+    ],
+    umum: [
+      'Halo {nama}, apa kabar? Sudah lama kita tidak ngobrol, semoga sehat dan lancar selalu.',
+      'Terima kasih atas bantuannya, {nama}. Sangat berarti buatku.',
+      'Kapan-kapan kita ketemu ya, {nama}. Aku kangen ngobrol.',
+    ],
+  };
+  const CARDS = {
+    Hubungan: ['Momen kecil apa minggu ini yang membuatmu merasa disayang?', 'Hal apa yang ingin kamu lebih sering kita lakukan berdua?', 'Apa yang bisa kulakukan supaya bebanmu terasa lebih ringan minggu ini?', 'Kapan terakhir kali kamu merasa benar-benar kudengarkan?', 'Kenangan awal kita yang paling kamu sukai apa?', 'Satu hal yang kamu syukuri dari kita hari ini?'],
+    'Obrolan dalam': ['Apa yang paling kamu khawatirkan saat ini, dan bagaimana aku bisa menemanimu?', 'Mimpi apa yang belum sempat kita bicarakan?', 'Nilai apa yang ingin kita wariskan ke keluarga?', 'Kapan kamu merasa paling menjadi dirimu sendiri?', 'Apa yang ingin kamu lepaskan dari masa lalu?', 'Jika uang bukan masalah, hidup seperti apa yang ingin kita bangun?'],
+    Seru: ['Kalau besok libur penuh, kita ke mana dan makan apa?', 'Lagu apa yang mengingatkanmu pada kita?', 'Masakan apa yang ingin kita coba masak bareng?', 'Kalau pindah kota selama setahun, kota mana yang kamu pilih?', 'Film apa yang ingin kita tonton ulang?', 'Julukan paling lucu apa yang cocok untukku?'],
+    Anak: ['Apa yang ingin diingat anak-anak tentang masa kecil mereka di rumah ini?', 'Aturan rumah mana yang perlu kita longgarkan atau kencangkan?', 'Apa kekuatan terbesar tiap anak, dan bagaimana kita mendukungnya?', 'Bagaimana kita membagi tugas pengasuhan agar tidak ada yang kelelahan?', 'Kebiasaan keluarga apa yang ingin kita mulai (makan malam bersama, akhir pekan tanpa gawai)?', 'Apa dari cara orang tua kita membesarkan kita yang ingin kita tiru atau ubah?'],
+  };
+  const profile = () => get('profile', 'profile') || {};
+  const ownerName = () => { const p = profile(); return (p.nick || p.name || '').trim(); };
+  const relGroup = (rel) => (['Istri', 'Suami', 'Pasangan'].includes(rel) ? 'pasangan' : rel === 'Anak' ? 'anak' : ['Orang tua', 'Mertua'].includes(rel) ? 'ortu' : 'umum');
+  const fillT = (s, p) => String(s).replace(/\{nama\}/g, p ? (p.nick || p.name) : 'kamu').replace(/\{saya\}/g, ownerName() || 'aku').replace(/\{sebutan\}/g, profile().callKid || 'Papa');
+  const safePhoto = (s) => (typeof s === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s) ? s : '');
+  const avHTML = (p, cls) => (safePhoto(p.photo) ? `<img class="av ${cls || ''}" src="${safePhoto(p.photo)}" alt="">` : `<span class="av ${cls || ''}" aria-hidden="true">${esc((p.name || '?').trim().charAt(0).toUpperCase())}</span>`);
+
+  function profilForm() {
+    const p = profile();
+    openForm('Profil saya', [
+      { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Nama panggilan (dipakai di sapaan)' },
+      { k: 'callKid', label: 'Sebutan Anda untuk anak (mis. Papa, Ayah, Bunda)' },
+    ], { name: p.name, nick: p.nick, callKid: p.callKid || '' }, (v) => { C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, callKid: v.callKid }); commit(); toast('Profil disimpan'); },
+    null, 'Nama ini dipakai untuk sapaan "Selamat pagi, …" dan draf kabar. Tersimpan di perangkat Anda (dan di Drive bila sinkron aktif).');
+  }
+
+  // --- rutinitas ---
+  const DAYSETS = [['all', 'Setiap hari'], ['work', 'Senin–Jumat'], ['weekend', 'Sabtu–Minggu']];
+  const daySetOf = (d) => (!d || !d.length ? 'all' : d.length === 5 && d.indexOf(1) >= 0 && d.indexOf(0) < 0 ? 'work' : 'weekend');
+  const daysFromSet = (k) => (k === 'work' ? [1, 2, 3, 4, 5] : k === 'weekend' ? [0, 6] : []);
+  function downloadText(name, text, type) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' })); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  function routineForm(r) {
+    r = r || {};
+    const extras = [];
+    if (r.id) {
+      extras.push({ label: r.paused ? '▶ Aktifkan lagi' : '⏸ Jeda pengingat', fn: () => { C.put(store, 'rt', { id: r.id, paused: !r.paused }); commit(); } });
+      extras.push({ label: '📅 Ekspor ke Kalender HP (.ics)', fn: () => { downloadText('rutinitas-' + r.name.replace(/[^\w]+/g, '-').toLowerCase() + '.ics', C.buildICS(C.routineICS(r, C.addDays(C.today(), 1))), 'text/calendar'); toast('Buka berkas .ics untuk menambah ke Google Calendar'); return false; } });
+      extras.push({ label: 'Hapus rutinitas', fn: () => { C.remove(store, r.id); list('rtlog').filter((l) => l.routineId === r.id).forEach((l) => C.remove(store, l.id)); ui.stack = []; commit(); } });
+    }
+    openForm(r.id ? 'Ubah rutinitas' : 'Rutinitas baru', [
+      { k: 'name', label: 'Nama (mis. Minum air 2 liter)', req: true }, { k: 'emoji', label: 'Ikon', type: 'select', opts: RT_EMOJI.map((e) => [e, e]) },
+      { k: 'target', label: 'Target per hari (angka)', type: 'number', req: true }, { k: 'unit', label: 'Satuan (gelas, kali, sesi…)' },
+      { k: 'from', label: 'Jam mulai pengingat', type: 'time', req: true },
+      { k: 'everyMin', label: 'Ulangi pengingat', type: 'select', opts: [['0', 'Sekali saja pada jam mulai'], ['30', 'Tiap 30 menit'], ['60', 'Tiap 1 jam'], ['90', 'Tiap 1,5 jam'], ['120', 'Tiap 2 jam'], ['180', 'Tiap 3 jam']] },
+      { k: 'to', label: 'Sampai jam (bila berulang)', type: 'time' },
+      { k: 'dayset', label: 'Hari aktif', type: 'select', opts: DAYSETS },
+    ], { name: r.name, emoji: r.emoji || '💧', target: r.target || 1, unit: r.unit || '', from: r.from || '08:00', everyMin: String(r.everyMin || 0), to: r.to || '', dayset: daySetOf(r.days) }, (v) => {
+      const target = Math.round(+v.target);
+      if (!(target >= 1 && target <= 99)) return 'Target harus 1–99.';
+      const every = +v.everyMin;
+      if (every > 0) { const a = C.toMin(v.from), b = C.toMin(v.to); if (b == null || b <= a) return 'Isi "Sampai jam" yang lebih besar dari jam mulai.'; }
+      C.put(store, 'rt', { id: r.id, name: v.name, emoji: v.emoji, target, unit: v.unit, from: v.from, to: every > 0 ? v.to : '', everyMin: every, days: daysFromSet(v.dayset), paused: !!r.paused });
+      commit();
+    }, extras, 'Pengingat otomatis berhenti bila target hari ini tercapai atau Anda sudah sesuai laju.');
+  }
+  function rtTemplateForm() {
+    openForm('Pilih rutinitas', RT_TEMPLATES.map((t, i) => ({ k: 't' + i, label: t.emoji + ' ' + t.name + ' · ' + t.target + ' ' + t.unit, type: 'check' })), {}, (v) => {
+      let n = 0;
+      RT_TEMPLATES.forEach((t, i) => { if (v['t' + i]) { n++; C.put(store, 'rt', Object.assign({}, t)); } });
+      if (!n) return 'Centang minimal satu.';
+      commit(); toast(n + ' rutinitas ditambahkan');
+    });
+  }
+  function rtCard(r, compact) {
+    const t = C.today(), n = new Date(), mins = n.getHours() * 60 + n.getMinutes();
+    const done = C.routineDone(list('rtlog'), r.id, t), target = C.routineTarget(r), act = C.routineActiveOn(r, t) && !r.paused;
+    const exp = act ? C.routineExpected(r, mins) : 0, behind = act && done < exp && done < target;
+    const times = C.routineTimes(r), nxt = times.find((x) => C.toMin(x) > mins);
+    const sub = r.paused ? 'dijeda' : !C.routineActiveOn(r, t) ? 'tidak aktif hari ini' : done >= target ? 'target tercapai 🎉' : (nxt ? 'berikutnya ' + nxt : 'pengingat hari ini selesai') + (times.length > 1 ? ' · ' + times[0] + '–' + times[times.length - 1] : '');
+    const pct = Math.min(100, Math.round(done / target * 100));
+    return `<div class="card pc rt ${r.paused ? 'off' : ''}"><div class="pt" ${compact ? '' : `data-a="rtEdit" data-id="${r.id}" style="cursor:pointer"`}>${ic('c5', r.emoji || '⭐')}<div class="grow"><div class="t">${esc(r.name)}</div><div class="s">${esc(sub)}</div></div><div class="rn"><b>${done}</b>/${target}<small>${esc(r.unit || '')}</small></div></div><div class="bar"><i class="${done >= target ? '' : behind ? 'warn' : ''}" style="width:${pct}%"></i></div><div class="pa">${behind ? `<span class="bd soon">seharusnya ${exp}</span>` : done >= target ? '<span class="bd">selesai</span>' : '<span class="s">sesuai laju</span>'}<span class="inl" style="gap:8px"><button class="qb" data-a="rtDec" data-id="${r.id}" aria-label="Kurangi ${esc(r.name)}">−</button><button class="btn sm" data-a="rtInc" data-id="${r.id}" aria-label="Tambah ${esc(r.name)}">+1</button></span></div></div>`;
+  }
+
+  // --- keluarga ---
+  function personForm(p) {
+    p = p || {};
+    openForm(p.id ? 'Ubah anggota' : 'Anggota keluarga baru', [
+      { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Panggilan' },
+      { k: 'rel', label: 'Hubungan dengan Anda', type: 'select', opts: REL.map((x) => [x, x]) },
+      { k: 'birth', label: 'Tanggal lahir', type: 'date' }, { k: 'phone', label: 'Nomor WhatsApp / telepon', type: 'tel' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
+    ], { name: p.name, nick: p.nick, rel: p.rel || 'Istri', birth: p.birth, phone: p.phone, notes: p.notes }, (v) => {
+      C.put(store, 'person', { id: p.id, name: v.name, nick: v.nick, rel: v.rel, birth: v.birth, phone: v.phone, notes: v.notes, ids: p.ids || [], photo: p.photo || '' }); commit();
+    }, p.id ? [{ label: 'Hapus anggota & berkasnya', fn: () => {
+      list('pfile').filter((f) => f.personId === p.id).forEach((f) => { IDB.del(f.id); C.remove(store, f.id); });
+      C.remove(store, p.id); ui.stack = []; commit();
+    } }] : null);
+  }
+  function idForm(p, i) {
+    const cur = i != null ? (p.ids || [])[i] : {};
+    openForm(i != null ? 'Ubah data identitas' : 'Tambah data identitas', [
+      { k: 'kind', label: 'Jenis', req: true, list: ID_KINDS }, { k: 'no', label: 'Nomor', req: true }, { k: 'exp', label: 'Berlaku sampai (bila ada)', type: 'date' }, { k: 'note', label: 'Catatan' },
+    ], { kind: cur.kind, no: cur.no, exp: cur.exp, note: cur.note }, (v) => {
+      const ids = (p.ids || []).slice(); const e = { kind: v.kind, no: v.no, exp: v.exp, note: v.note };
+      if (i != null) ids[i] = e; else ids.push(e);
+      C.put(store, 'person', { id: p.id, ids }); commit();
+    }, i != null ? [{ label: 'Hapus data ini', fn: () => { const ids = (p.ids || []).slice(); ids.splice(i, 1); C.put(store, 'person', { id: p.id, ids }); commit(); } }] : null,
+    'Nomor disimpan polos (belum terenkripsi) dan tersembunyi di layar sampai Anda ketuk Tampilkan. Jangan simpan PIN atau kata sandi di sini.');
+  }
+  function draftForm(d) {
+    d = d || {};
+    openForm(d.id ? 'Ubah draf' : 'Draf sendiri', [
+      { k: 'text', label: 'Isi pesan', type: 'textarea', req: true }, { k: 'grp', label: 'Untuk', type: 'select', opts: [['pasangan', 'Pasangan'], ['anak', 'Anak'], ['ortu', 'Orang tua'], ['umum', 'Lainnya']] },
+    ], { text: d.text, grp: d.grp || 'pasangan' }, (v) => { C.put(store, 'draft', { id: d.id, text: v.text, grp: v.grp }); commit(); },
+    d.id ? [{ label: 'Hapus draf', fn: () => { C.remove(store, d.id); commit(); } }] : null, 'Pakai {nama} untuk nama panggilan penerima dan {saya} untuk nama Anda.');
+  }
+
+  // ---------- penyimpanan berkas foto (hanya di perangkat ini; metadata ikut sinkron) ----------
+  const IDB = {
+    db: null,
+    open() {
+      if (this.db) return this.db;
+      this.db = new Promise((res, rej) => {
+        if (!window.indexedDB) return rej(new Error('IndexedDB tidak tersedia'));
+        const q = indexedDB.open('rumahku-files', 1);
+        q.onupgradeneeded = () => q.result.createObjectStore('f');
+        q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+      });
+      return this.db;
+    },
+    async run(mode, fn) { const db = await this.open(); return new Promise((res, rej) => { const tx = db.transaction('f', mode), r = fn(tx.objectStore('f')); tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); }); },
+    put(id, blob) { return this.run('readwrite', (s) => s.put(blob, id)); },
+    get(id) { return this.run('readonly', (s) => s.get(id)); },
+    del(id) { return this.run('readwrite', (s) => s.delete(id)).catch(() => {}); },
+  };
+  function loadImage(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = () => res({ im, url }); im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Gambar tidak bisa dibaca')); }; im.src = url;
+    });
+  }
+  async function resizeBlob(file, max, q) {
+    const { im, url } = await loadImage(file);
+    const s = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.round(im.naturalWidth * s), h = Math.round(im.naturalHeight * s);
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, 0, 0, w, h); URL.revokeObjectURL(url);
+    return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Gagal memproses gambar'))), 'image/jpeg', q));
+  }
+  async function avatarFrom(file) {
+    const { im, url } = await loadImage(file), S = 160, c = document.createElement('canvas'); c.width = S; c.height = S;
+    const m = Math.min(im.naturalWidth, im.naturalHeight), sx = (im.naturalWidth - m) / 2, sy = (im.naturalHeight - m) / 2;
+    c.getContext('2d').drawImage(im, sx, sy, m, m, 0, 0, S, S); URL.revokeObjectURL(url);
+    return c.toDataURL('image/jpeg', 0.7);
+  }
+  function pickImage(cb) {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+    i.onchange = () => { if (i.files && i.files[0]) cb(i.files[0]); };
+    i.click();
+  }
+  async function viewFile(f) {
+    let blob = null; try { blob = await IDB.get(f.id); } catch (e) { /* abaikan */ }
+    if (!blob) return toast('Berkas ini tersimpan di perangkat lain / belum ada di sini');
+    const url = URL.createObjectURL(blob);
+    dlg.innerHTML = `<div class="menu"><h3>${esc(f.label)}</h3><img src="${url}" alt="${esc(f.label)}" style="width:100%;border-radius:12px"><button class="btn alt" data-i="s">Simpan ke galeri/unduhan</button><button class="btn bad sm" data-i="d">Hapus berkas</button><button class="btn alt sm" data-i="x">Tutup</button></div>`;
+    dlg.querySelector('.menu').addEventListener('click', (e) => {
+      const i = e.target.dataset && e.target.dataset.i; if (!i) return;
+      if (i === 's') { const a = document.createElement('a'); a.href = url; a.download = (f.label || 'berkas') + '.jpg'; document.body.appendChild(a); a.click(); a.remove(); return; }
+      if (i === 'd') { IDB.del(f.id); C.remove(store, f.id); commit(); }
+      closeDlg();
+    });
+    dlg.addEventListener('close', () => URL.revokeObjectURL(url), { once: true });
+    dlg.showModal();
+  }
+
+  // ---------- notifikasi ----------
+  const getNLog = () => readJSON('rk1.nlog') || [];
+  function notify(title, body, tag) {
+    try { const l = getNLog(); l.unshift({ t: new Date().toISOString(), title, body }); localStorage.setItem('rk1.nlog', JSON.stringify(l.slice(0, 40))); } catch (e) { /* abaikan */ }
+    if (document.visibilityState === 'visible') toast('🔔 ' + body);
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const opt = { body, tag, icon: 'icon-192.png', badge: 'icon-192.png' };
+    const fallback = () => { try { new Notification(title, opt); } catch (e) { /* abaikan */ } };
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then((reg) => (reg && reg.showNotification ? reg.showNotification(title, opt) : fallback())).catch(fallback);
+    else fallback();
+  }
+  const detailOn = () => cfg.notifDetail !== false;
+  function loadFired(t) { const f = readJSON('rk1.fired'); return new Set(f && f.d === t ? f.k : []); }
+  function saveFired(t, set) { try { localStorage.setItem('rk1.fired', JSON.stringify({ d: t, k: Array.from(set).slice(-300) })); } catch (e) { /* abaikan */ } }
+  const REMIND_OPTS = [['', 'Tanpa pengingat'], ['0', 'Tepat waktu'], ['10', '10 menit sebelumnya'], ['30', '30 menit sebelumnya'], ['60', '1 jam sebelumnya']];
+  function icsItems() {
+    const t = C.today(), out = [], RR = { daily: 'FREQ=DAILY', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY' };
+    list('rt').filter((r) => !r.paused).forEach((r) => C.routineICS(r, C.addDays(t, 1)).forEach((x) => out.push(x)));
+    list('task').filter((x) => !x.done && x.due && x.due >= t && x.time && x.remind !== '' && x.remind != null).forEach((x) => out.push({ uid: x.id, title: x.title, date: x.due, time: x.time, rrule: RR[x.repeat], alarmMin: +x.remind || 0 }));
+    list('event').filter((e) => e.time && !e.allDay).forEach((e) => out.push({ uid: e.id, title: e.title, date: e.date, time: e.time, rrule: RR[e.repeat], alarmMin: e.remind === '' ? 0 : e.remind == null ? 10 : +e.remind }));
+    return out;
+  }
+  function waLink(phone, text) { const n = C.waNumber(phone); return 'https://wa.me/' + (n || '') + '?text=' + encodeURIComponent(text); }
+  function afDrafts(p) {
+    const g = relGroup(p.rel), custom = list('draft').filter((d) => d.grp === g).map((d) => ({ text: d.text, id: d.id }));
+    return DRAFTS[g].map((x) => ({ text: x })).concat(custom);
+  }
+  async function afSend(how, pid, i) {
+    const p = get('person', pid); if (!p) return; const d = afDrafts(p)[+i]; if (!d) return;
+    const text = fillT(d.text, p);
+    if (how === 'wa') window.open(waLink(p.phone, text), '_blank', 'noopener');
+    else if (how === 'share' && navigator.share) { try { await navigator.share({ text }); } catch (e) { return; } }
+    else {
+      try { await navigator.clipboard.writeText(text); toast('Pesan disalin'); } catch (e) {
+        const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Pesan disalin'); } catch (e2) { toast('Salin manual: tekan lama pada teks'); } ta.remove();
+      }
+    }
+    C.put(store, 'person', { id: p.id, lastContact: C.today() }); commit();
+  }
+
   // ---------- komponen tampilan ----------
-  const byDue = (a, b) => C.cmp(a.due || '9999', b.due || '9999') || C.cmp(b.prio || '0', a.prio || '0');
+  const byDue = (a, b) => C.cmp(a.due || '9999', b.due || '9999') || C.cmp(a.time || '99:99', b.time || '99:99') || C.cmp(b.prio || '0', a.prio || '0');
   function taskRow(t, today) {
     const late = t.due && t.due < today && !t.done;
-    return `<div class="row ${t.done ? 'done' : ''}"><button class="chk ${t.done ? 'on' : ''}" data-a="${t.done ? 'taskUndo' : 'taskDone'}" data-id="${t.id}" aria-label="${t.done ? 'Batalkan selesai' : 'Tandai selesai'}: ${esc(t.title)}">${t.done ? '✓' : ''}</button><div class="grow" data-a="taskEdit" data-id="${t.id}"><div class="t">${t.prio === '1' ? '⭐ ' : ''}${esc(t.title)}${t.repeat && t.repeat !== 'none' ? ' ↻' : ''}</div><div class="s">${t.due ? (late ? '<span class="neg">Terlambat · </span>' : '') + fmtDate(t.due) : 'Tanpa tenggat'}${t.label ? ' · ' + esc(t.label) : ''}</div></div></div>`;
+    return `<div class="row ${t.done ? 'done' : ''}"><button class="chk ${t.done ? 'on' : ''}" data-a="${t.done ? 'taskUndo' : 'taskDone'}" data-id="${t.id}" aria-label="${t.done ? 'Batalkan selesai' : 'Tandai selesai'}: ${esc(t.title)}">${t.done ? '✓' : ''}</button><div class="grow" data-a="taskEdit" data-id="${t.id}"><div class="t">${t.prio === '1' ? '⭐ ' : ''}${esc(t.title)}${t.repeat && t.repeat !== 'none' ? ' ↻' : ''}</div><div class="s">${t.due ? (late ? '<span class="neg">Terlambat · </span>' : '') + fmtDate(t.due) + (t.time ? ' · ' + esc(t.time) : '') : 'Tanpa tenggat'}${t.time && t.remind !== '' && t.remind != null ? ' 🔔' : ''}${t.label ? ' · ' + esc(t.label) : ''}</div></div></div>`;
   }
   function evOccurrences(from, to) {
     const out = [];
@@ -446,6 +703,7 @@
     if (bad.length) bad.forEach((b) => rows.push(['c6', b.level === 'over' ? '🚨' : '⚠️', 'Anggaran ' + esc(b.cat) + ' ' + b.pct + '%', 'tab:money']));
     else if (bs.length) rows.push(['c2', '✅', 'Budget masih aman', 'tab:money']);
     C.homeAttention(store, t).slice(0, 5).forEach((a) => rows.push([a.level === 'late' ? 'c3' : 'c1', a.icon, esc(a.text) + (a.kind === 'plankm' || a.kind === 'low' ? '' : ' — ' + C.countdown(a.n)), a.go]));
+    list('person').forEach((p) => { if (!p.birth) return; const n = C.daysBetween(t, nextBirthday(p.birth, t)); if (n <= 7) rows.push(['c6', '🎂', 'Ulang tahun ' + esc(p.nick || p.name) + (n === 0 ? ' hari ini' : ' — ' + n + ' hari lagi'), 'keluarga']); });
     const hp = list('habit').filter((h) => !(h.log || []).includes(t)).length;
     if (hp) rows.push(['c5', '🌱', hp + ' kebiasaan belum dicentang', 'habit']);
     return rows;
@@ -454,14 +712,16 @@
   // ---------- halaman utama (tab) ----------
   function vToday() {
     const t = C.today(), d = C.parseD(t), hr = new Date().getHours();
-    const greet = hr < 11 ? 'Selamat pagi' : hr < 15 ? 'Selamat siang' : hr < 18 ? 'Selamat sore' : 'Selamat malam';
+    const greet = C.greeting(hr) + (ownerName() ? ', ' + ownerName() : '');
     const accs = list('acc'), nw = C.netWorth(accs, list('tx')), rep = C.monthReport(list('tx'), nowYM());
     const items = todayItems();
     const tasks = list('task').filter((x) => !x.done && x.due && x.due <= t).sort(byDue);
-    let h = `<div class="card" style="padding:0;overflow:hidden">${HOUSE_SVG}</div><div class="card hero pad" data-a="tab" data-v="money" style="cursor:pointer"><div class="s">Kekayaan bersih</div><div class="big">${accs.length ? rp(nw) : 'Mulai catat uang'}</div><div class="s">${accs.length ? 'Bulan ini +' + rp(rep.income) + ' · −' + rp(rep.expense) : 'Ketuk untuk menambah akun pertama'}</div></div>`;
+    const rts = list('rt').filter((r) => !r.paused && C.routineActiveOn(r, t)).sort((a, b) => C.cmp(a.from || '', b.from || ''));
+    let h = `<div class="card" style="padding:0;overflow:hidden">${HOUSE_SVG}</div>${ownerName() ? '' : '<div class="card pad" data-a="profilEdit" style="cursor:pointer"><div class="t">👋 Siapa nama Anda?</div><div class="s">Ketuk untuk mengisi, supaya sapaan jadi personal.</div></div>'}<div class="card hero pad" data-a="tab" data-v="money" style="cursor:pointer"><div class="s">Kekayaan bersih</div><div class="big">${accs.length ? rp(nw) : 'Mulai catat uang'}</div><div class="s">${accs.length ? 'Bulan ini +' + rp(rep.income) + ' · −' + rp(rep.expense) : 'Ketuk untuk menambah akun pertama'}</div></div>`;
+    if (rts.length) h += `<h2>Rutinitas hari ini</h2>${rts.slice(0, 4).map((r) => rtCard(r)).join('')}${rts.length > 4 ? `<button class="btn alt full" data-a="nav" data-to="harian">Lihat semua (${rts.length})</button>` : ''}`;
     h += `<h2>Hari ini</h2><div class="card">${items.length ? items.map((r) => `<div class="hr" data-a="nav" data-to="${r[3]}">${ic(r[0], r[1])}<div class="grow t" style="font-weight:600">${r[2]}</div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada yang perlu diperhatikan. Mulai dengan tombol + atau isi data contoh di Lainnya → Bantuan.</div>'}</div>`;
     if (tasks.length) h += `<h2>Agenda tugas</h2><div class="card">${tasks.map((x) => taskRow(x, t)).join('')}</div>`;
-    h += `<h2>Menu</h2><div class="tiles">${[['🛠️', 'Rumah', 'tab:rumah'], ['🔧', 'Perawatan', 'perawatan'], ['🧾', 'Tagihan', 'tagihan'], ['🚗', 'Kendaraan', 'kendaraan'], ['🛒', 'Belanja', 'stok'], ['✅', 'Tugas', 'tugas'], ['📓', 'Jurnal', 'jurnal'], ['🌱', 'Kebiasaan', 'habit']].map((m) => `<div class="tile" data-a="nav" data-to="${m[2]}" role="button" tabindex="0"><span class="em">${m[0]}</span>${m[1]}</div>`).join('')}</div>`;
+    h += `<h2>Menu</h2><div class="tiles">${[['🛠️', 'Rumah', 'tab:rumah'], ['🔧', 'Perawatan', 'perawatan'], ['🧾', 'Tagihan', 'tagihan'], ['🚗', 'Kendaraan', 'kendaraan'], ['🛒', 'Belanja', 'stok'], ['✅', 'Tugas', 'tugas'], ['📓', 'Jurnal', 'jurnal'], ['🌱', 'Kebiasaan', 'habit'], ['💧', 'Rutinitas', 'harian'], ['👨‍👩‍👧', 'Keluarga', 'keluarga'], ['💌', 'Kabar & afeksi', 'afeksi'], ['🔔', 'Notifikasi', 'notif']].map((m) => `<div class="tile" data-a="nav" data-to="${m[2]}" role="button" tabindex="0"><span class="em">${m[0]}</span>${m[1]}</div>`).join('')}</div>`;
     return { title: greet, sub: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(), html: h };
   }
 
@@ -530,8 +790,9 @@
       mrow('c4', '🚗', 'Kendaraan', 'Pajak, STNK, odometer, servis', 'kendaraan'), mrow('c1', '🛡️', 'Aset & garansi', 'Barang berharga dan masa garansi', 'aset'),
       mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
       mrow('c4', '📄', 'Dokumen penting', 'Lokasi simpan & masa berlaku', 'dokumen')])
+      + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian')])
       + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
-      + g('Pengaturan', [mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
+      + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
     return { title: 'Lainnya', sub: '', html: h };
   }
 
@@ -576,7 +837,7 @@
       h += `<div class="card">${bs.length ? bs.map(({ b, due }) => {
         const n = C.daysBetween(t, due), lvl = C.urgency(n, 5);
         return `<div class="row">${ic(lvl === 'late' ? 'c3' : 'c6', '🧾')}<div class="grow" data-a="billEdit" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">Tiap tgl ${b.dueDay}${b.amountEst ? ' · ±' + rp(b.amountEst) : ''}${b.lastPaid ? ' · terakhir ' + fmtDate(b.lastPaid) : ''}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${badge(due)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button></div></div>`;
-      }).join('') : '<div class="empty">Belum ada tagihan rutin.<br>Tambahkan listrik, internet, air, PBB, dan lainnya.</div>'}</div><button class="btn full" data-a="billAdd">+ Tagihan rutin</button><p class="note">"Bayar" menandai periode ini lunas dan, bila Anda pilih akun, langsung mencatat pengeluaran di tab Uang.</p>`;
+      }).join('') : '<div class="empty">Belum ada tagihan rutin.<br>Tambahkan listrik, internet, air, PBB, dan lainnya.</div>'}</div><button class="btn full" data-a="billAdd">+ Tagihan rutin</button><div style="height:10px"></div><button class="btn alt full" data-a="billTpl">✨ Tambah dari template</button><p class="note">"Bayar" menandai periode ini lunas dan, bila Anda pilih akun, langsung mencatat pengeluaran di tab Uang.</p>`;
       return { title: 'Tagihan rutin', sub: '', html: h, add: () => billForm() };
     },
     aset() {
@@ -620,12 +881,75 @@
       const t = C.today(), hs = list('habit');
       return { title: 'Kebiasaan', sub: '', add: () => habitForm(), html: `<div class="card">${hs.length ? hs.map((x) => habitRow(x, t)).join('') : '<div class="empty">Belum ada kebiasaan.</div>'}</div><button class="btn full" data-a="habitAdd">+ Kebiasaan</button>` };
     },
+    harian() {
+      const rs = list('rt').sort((a, b) => C.cmp(a.from || '', b.from || '') || C.cmp(a.name, b.name));
+      let h = rs.length ? rs.map((r) => rtCard(r)).join('') : '<div class="card"><div class="empty">Belum ada rutinitas harian.<br>Mulai dari template: minum air 2 liter, vitamin, olahraga, kabari keluarga.</div></div>';
+      h += '<button class="btn full" data-a="rtAdd">+ Rutinitas baru</button><div style="height:10px"></div><button class="btn alt full" data-a="rtTpl">✨ Tambah dari template</button><p class="note">Pengingat berhenti sendiri bila Anda sudah sesuai laju atau target tercapai. Ketuk nama rutinitas untuk mengubah, menjeda, atau mengekspor ke Kalender HP.</p>';
+      return { title: 'Rutinitas harian', sub: rs.length + ' rutinitas', html: h, add: () => routineForm() };
+    },
+    notif() {
+      const perm = 'Notification' in window ? Notification.permission : 'tidak didukung', log = getNLog();
+      const permTxt = { granted: 'aktif ✓', denied: 'diblokir (ubah di pengaturan browser)', default: 'belum diizinkan', 'tidak didukung': 'tidak didukung browser ini' }[perm] || perm;
+      let h = `<div class="card pad"><div class="kv"><span>Izin notifikasi</span><b>${esc(permTxt)}</b></div><div class="btns" style="margin-top:10px"><button class="btn" data-a="notif">Izinkan notifikasi</button><button class="btn alt" data-a="notifTest">Uji sekarang</button></div><div class="kv" style="margin-top:10px"><span>Tampilkan nama rutinitas/tugas di notifikasi</span><button class="btn alt sm" data-a="notifDetail">${detailOn() ? 'Ya' : 'Tidak'}</button></div></div>`;
+      h += `<h2>Agar tetap berbunyi saat aplikasi tertutup</h2><div class="card pad"><p class="s" style="margin:0 0 10px">Aplikasi web murni (tanpa server) hanya bisa menyalakan pengingat selagi aplikasi terbuka. Untuk pengingat yang pasti berbunyi, ekspor ke Kalender HP: alarm dijalankan oleh aplikasi Kalender, bukan oleh aplikasi ini.</p><button class="btn full" data-a="icsAll">📅 Ekspor pengingat ke Kalender HP (.ics)</button><p class="note">Berisi rutinitas aktif, tugas ber-jam yang punya pengingat, dan acara ber-jam. Buka berkas .ics di HP lalu pilih Google Calendar. Ekspor ulang bila jadwal berubah (jangan impor dua kali agar tidak dobel).</p></div>`;
+      h += `<h2>Riwayat notifikasi</h2><div class="card">${log.length ? log.map((x) => `<div class="row"><div class="grow"><div class="t" style="font-weight:600">${esc(x.body)}</div><div class="s">${esc(new Date(x.t).toLocaleString('id-ID'))}</div></div></div>`).join('') : '<div class="empty">Belum ada notifikasi yang berbunyi.</div>'}</div>`;
+      return { title: 'Notifikasi', sub: '', html: h };
+    },
+    profil() {
+      const p = profile();
+      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
+    },
+    keluarga() {
+      const ps = list('person').sort((a, b) => C.cmp(a.name, b.name)), t = C.today();
+      const h = `<div class="card">${ps.length ? ps.map((p) => {
+        const age = C.ageOn(p.birth, t), bd = p.birth ? C.daysBetween(t, nextBirthday(p.birth, t)) : null;
+        return `<div class="row" data-a="personOpen" data-id="${p.id}">${avHTML(p)}<div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.rel || '')}${age != null ? ' · ' + age + ' th' : ''}${p.lastContact ? ' · dikabari ' + C.countdown(C.daysBetween(t, p.lastContact)).replace('hari ini', 'hari ini') : ''}</div></div>${bd != null && bd <= 14 ? `<span class="bd soon">🎂 ${bd === 0 ? 'hari ini' : bd + ' hari'}</span>` : ''}<span class="chev">›</span></div>`;
+      }).join('') : '<div class="empty">Belum ada anggota keluarga.<br>Tambahkan pasangan, anak, atau orang tua, lalu isi data pribadi masing-masing.</div>'}</div><button class="btn full" data-a="personAdd">+ Anggota keluarga</button><div style="height:10px"></div><button class="btn alt full" data-a="nav" data-to="afeksi">💌 Kirim kabar &amp; kata sayang</button>`;
+      return { title: 'Keluarga', sub: ps.length + ' anggota', html: h, add: () => personForm() };
+    },
+    orang(pp) {
+      const p = get('person', pp.id); if (!p) return null;
+      const t = C.today(), files = list('pfile').filter((f) => f.personId === p.id).sort((a, b) => C.cmp(a._u, b._u)), age = C.ageOn(p.birth, t);
+      let h = `<div class="card pad"><div style="display:flex;gap:14px;align-items:center">${avHTML(p, 'lg')}<div class="grow"><div class="t" style="font-size:1.15rem">${esc(p.name)}</div><div class="s">${esc(p.rel || '')}${p.nick ? ' · "' + esc(p.nick) + '"' : ''}${age != null ? ' · ' + age + ' tahun' : ''}</div></div></div>
+        ${p.birth ? `<div class="kv"><span>Lahir</span><b>${fmtDate(p.birth)}</b></div>` : ''}${p.phone ? `<div class="kv"><span>Telepon</span><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}"><b>${esc(p.phone)}</b></a></div>` : ''}${p.notes ? `<div class="kv"><span>Catatan</span><span>${esc(p.notes)}</span></div>` : ''}
+        <div class="btns" style="margin-top:12px"><button class="btn" data-a="personKabar" data-id="${p.id}">💌 Kabari</button><button class="btn alt" data-a="personEdit" data-id="${p.id}">Ubah</button><button class="btn alt" data-a="personPhoto" data-id="${p.id}">📷 Foto profil</button></div></div>`;
+      h += `<h2>Data identitas</h2><div class="card">${(p.ids || []).length ? p.ids.map((e, i) => {
+        const key = p.id + ':' + i, shown = ui.reveal[key];
+        return `<div class="row"><div class="grow"><div class="s">${esc(e.kind)}${e.exp ? ' · berlaku s.d. ' + fmtDate(e.exp) : ''}</div><div class="t idn">${shown ? esc(e.no) : esc(C.maskId(e.no))}</div>${e.note ? `<div class="s">${esc(e.note)}</div>` : ''}</div><div class="inl" style="gap:6px"><button class="btn alt sm" data-a="idShow" data-key="${key}">${shown ? 'Sembunyikan' : 'Tampilkan'}</button>${shown ? `<button class="btn alt sm" data-a="idCopy" data-id="${p.id}" data-i="${i}">Salin</button>` : ''}<button class="link" data-a="idEdit" data-id="${p.id}" data-i="${i}" aria-label="Ubah">✎</button></div></div>`;
+      }).join('') : '<div class="empty">Belum ada data. Tambahkan KTP, NPWP, KK, SIM, BPJS, dll.</div>'}</div><button class="btn full" data-a="idAdd" data-id="${p.id}">+ Data identitas</button>`;
+      h += `<h2>Foto &amp; berkas</h2><div class="card">${files.length ? files.map((f) => `<div class="row" data-a="fileOpen" data-id="${f.id}">${ic('c4', '🖼️')}<div class="grow"><div class="t">${esc(f.label)}</div><div class="s">${fmtDate((f._u || '').slice(0, 10))}${f.size ? ' · ' + Math.round(f.size / 1024) + ' KB' : ''}</div></div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada foto KTP/NPWP/dokumen.</div>'}</div><button class="btn full" data-a="fileAdd" data-id="${p.id}">+ Foto / berkas</button>`;
+      h += '<p class="note">⚠️ Nomor identitas disimpan polos dan hanya disembunyikan di layar. Foto berkas disimpan hanya di perangkat ini (tidak ikut ekspor/sinkron Drive); ganti HP = unggah ulang. Enkripsi dengan kata sandi belum ada — gunakan kunci layar HP yang kuat.</p>';
+      return { title: p.nick || p.name, sub: p.rel || '', html: h, add: () => personForm(p) };
+    },
+    afeksi() {
+      const tab = ui.afTab, t = C.today();
+      let h = seg('afTab', [['kabar', '💌 Kabar'], ['kartu', '🃏 Kartu'], ['riwayat', 'Riwayat']], tab);
+      if (tab === 'kabar') {
+        const ps = list('person').sort((a, b) => C.cmp(a.name, b.name));
+        if (!ps.length) return { title: 'Kabar & afeksi', sub: '', html: h + '<div class="card"><div class="empty">Tambahkan anggota keluarga dulu, lalu draf kabar muncul sesuai hubungan (pasangan, anak, orang tua).</div></div><button class="btn full" data-a="nav" data-to="keluarga">Ke Keluarga</button>' };
+        let sel = ps.find((x) => x.id === ui.afWho) || ps[0];
+        h += `<div class="chips">${ps.map((x) => `<button class="chip ${x.id === sel.id ? 'on' : ''}" data-a="afWho" data-id="${x.id}">${esc(x.nick || x.name)}</button>`).join('')}</div>`;
+        h += `<div class="card pad" style="display:flex;gap:12px;align-items:center">${avHTML(sel)}<div class="grow"><div class="t">${esc(sel.name)}</div><div class="s">${esc(sel.rel || '')} · ${sel.lastContact ? 'terakhir dikabari ' + (C.daysBetween(sel.lastContact, t) === 0 ? 'hari ini' : C.daysBetween(sel.lastContact, t) + ' hari lalu') : 'belum pernah dikabari lewat aplikasi'}</div></div></div>`;
+        h += afDrafts(sel).map((d, i) => `<div class="card pad draft"><p style="margin:0 0 10px;line-height:1.5">${esc(fillT(d.text, sel))}</p><div class="btns"><button class="btn sm" data-a="afWa" data-id="${sel.id}" data-i="${i}">${sel.phone ? 'WhatsApp' : 'WhatsApp (pilih kontak)'}</button>${navigator.share ? `<button class="btn alt sm" data-a="afShare" data-id="${sel.id}" data-i="${i}">Bagikan</button>` : ''}<button class="btn alt sm" data-a="afCopy" data-id="${sel.id}" data-i="${i}">Salin</button>${d.id ? `<button class="btn alt sm" data-a="draftEdit" data-id="${d.id}">Ubah</button>` : ''}</div></div>`).join('');
+        h += '<button class="btn alt full" data-a="draftAdd">+ Tulis draf sendiri</button><p class="note">Tombol WhatsApp membuka chat dengan pesan sudah terisi; Anda yang menekan kirim. Tidak ada pesan terkirim otomatis.</p>';
+      } else if (tab === 'kartu') {
+        const cats = Object.keys(CARDS), cat = cats.includes(ui.cardCat) ? ui.cardCat : cats[0], deck = CARDS[cat];
+        const dayN = Math.floor(C.parseD(t).getTime() / 86400000), q = deck[(dayN + ui.cardShift) % deck.length];
+        const seen = list('ccard').some((c) => c.q === q);
+        h += `<div class="chips">${cats.map((c) => `<button class="chip ${c === cat ? 'on' : ''}" data-a="cardCat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
+        h += `<div class="cc"><div class="cc-in"><small>${esc(cat)}</small><p>${esc(q)}</p></div></div><div class="btns"><button class="btn alt" data-a="cardNext">Kartu lain</button><button class="btn" data-a="cardDone" data-q="${esc(q)}" data-cat="${esc(cat)}">${seen ? '✓ Sudah pernah dibahas' : 'Sudah kita bahas ✓'}</button></div><p class="note">Luangkan beberapa menit, matikan layar lain, dan gantian menjawab. Tidak ada jawaban salah.</p>`;
+      } else {
+        const hs = list('ccard').sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
+        h += `<div class="card">${hs.length ? hs.map((c) => `<div class="row"><div class="grow"><div class="s">${fmtDate(c.date)} · ${esc(c.cat)}</div><div class="t" style="font-weight:500">${esc(c.q)}</div></div></div>`).join('') : '<div class="empty">Belum ada kartu yang dibahas.</div>'}</div>`;
+      }
+      return { title: 'Kabar & afeksi', sub: '', html: h };
+    },
     setelan() { return { title: 'Sinkron & backup', sub: '', html: vSettings() }; },
     bantuan() {
       const demo = list('task').concat(list('plan')).some((x) => x.demo);
       return { title: 'Bantuan', sub: '', html: `<div class="card pad"><div class="t">Pasang di layar utama HP</div><p class="s" style="margin:6px 0 0">Android (Chrome): menu ⋮ → <b>Tambahkan ke layar utama</b> / <b>Instal aplikasi</b>. iPhone (Safari): tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p></div>
 <div class="card pad"><div class="t">Data contoh</div><p class="s" style="margin:6px 0 10px">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja aplikasi. Bisa dihapus kapan saja tanpa menyentuh data asli Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}</div>
-<div class="card pad"><div class="t">Aturan yang dipegang</div><p class="s" style="margin:6px 0 0">Uang = bilangan bulat rupiah. Transaksi tidak dihapus, hanya di-void. Transfer bukan pemasukan/pengeluaran. Notifikasi berjudul generik.</p></div><p class="note">RUMAHKU-ONE Lite v0.2</p>` };
+<div class="card pad"><div class="t">Aturan yang dipegang</div><p class="s" style="margin:6px 0 0">Uang = bilangan bulat rupiah. Transaksi tidak dihapus, hanya di-void. Transfer bukan pemasukan/pengeluaran. Notifikasi berjudul generik.</p></div><p class="note">RUMAHKU-ONE Lite v0.3</p>` };
     },
   };
 
@@ -637,7 +961,7 @@
 <p class="note">Status: ${esc(syncMsg || (cfg.connected ? 'terhubung' : 'belum terhubung'))} · terakhir sinkron: ${esc(last)}</p>
 <p class="note">Data disimpan di folder tersembunyi aplikasi di Drive Anda. Tanpa Client ID, data hanya di perangkat ini.</p></div>
 <h2>Backup</h2><div class="card pad"><div class="btns"><button class="btn alt" data-a="export">Ekspor JSON</button><button class="btn alt" data-a="import">Impor / gabung JSON</button></div><input type="file" id="impf" accept="application/json,.json" hidden></div>
-<h2>Pengingat</h2><div class="card pad"><p class="note" style="margin-top:0">Notifikasi berjalan saat aplikasi terbuka (judul generik, tanpa isi). Pengingat saat aplikasi tertutup butuh server/Google Calendar (rencana berikutnya).</p><button class="btn alt" data-a="notif">Izinkan notifikasi (status: ${esc(notif)})</button></div>
+<h2>Pengingat</h2><div class="card pad"><p class="note" style="margin-top:0">Izin notifikasi, uji, riwayat, dan ekspor ke Kalender HP ada di halaman Notifikasi.</p><button class="btn alt" data-a="nav" data-to="notif">Buka Notifikasi</button></div>
 <h2>Data</h2><div class="card pad"><button class="btn bad" data-a="wipe">Hapus data di perangkat ini</button><p class="note">Salinan di Drive (jika terhubung) tidak ikut terhapus.</p></div>`;
   }
 
@@ -695,7 +1019,7 @@
     planOpen(d) { go('planDetail', { id: d.id }); }, planEdit(d) { planForm(get('plan', d.id)); }, planDone(d) { const p = get('plan', d.id); if (p) planDoneForm(p); },
     vehAdd() { vehForm(); }, vehEdit(d) { vehForm(get('veh', d.id)); }, odoUpd(d) { odoForm(get('veh', d.id)); },
     vehPlan(d) { planForm(null, { vehicleId: d.id, group: 'kendaraan', every: 6, unit: 'month' }); }, vehTpl(d) { templateForm(d.id); },
-    billAdd() { billForm(); }, billEdit(d) { billForm(get('bill', d.id)); }, billPay(d) { const b = get('bill', d.id); if (b) billPayForm(b); },
+    billAdd() { billForm(); }, billTpl() { billTemplateForm(); }, billEdit(d) { billForm(get('bill', d.id)); }, billPay(d) { const b = get('bill', d.id); if (b) billPayForm(b); },
     assetAdd() { assetForm(); }, assetEdit(d) { assetForm(get('asset', d.id)); },
     invAdd() { invForm(); }, invEdit(d) { invForm(get('inv', d.id)); },
     invInc(d) { const i = get('inv', d.id); if (i) { C.put(store, 'inv', { id: i.id, qty: (+i.qty || 0) + 1 }); commit(); } },
@@ -721,6 +1045,36 @@
     notif() { if (!('Notification' in window)) return toast('Browser tidak mendukung notifikasi'); Notification.requestPermission().then(() => render()); },
     wipe() { confirmBox('Hapus SEMUA data di perangkat ini? (Ekspor backup dulu bila perlu)', () => { store = C.emptyStore(); persist(); render(); toast('Data lokal dihapus'); }); },
     demoOn() { demoOn(); }, demoOff() { demoOff(); },
+    rtAdd() { routineForm(); }, rtTpl() { rtTemplateForm(); }, rtEdit(d) { routineForm(get('rt', d.id)); },
+    rtInc(d) { rtBump(d.id, 1); }, rtDec(d) { rtBump(d.id, -1); },
+    profilEdit() { profilForm(); },
+    personAdd() { personForm(); }, personEdit(d) { personForm(get('person', d.id)); }, personOpen(d) { go('orang', { id: d.id }); },
+    personKabar(d) { ui.afTab = 'kabar'; ui.afWho = d.id; go('afeksi'); },
+    personPhoto(d) {
+      const p = get('person', d.id); if (!p) return;
+      pickImage(async (f) => { try { const url = await avatarFrom(f); C.put(store, 'person', { id: p.id, photo: url }); commit(); toast('Foto profil diperbarui'); } catch (e) { toast(e.message); } });
+    },
+    idAdd(d) { const p = get('person', d.id); if (p) idForm(p); }, idEdit(d) { const p = get('person', d.id); if (p) idForm(p, +d.i); },
+    idShow(d) { ui.reveal[d.key] = !ui.reveal[d.key]; render(); },
+    async idCopy(d) { const p = get('person', d.id), e = p && (p.ids || [])[+d.i]; if (!e) return; try { await navigator.clipboard.writeText(e.no); toast('Nomor disalin'); } catch (x) { toast('Salin manual dari layar'); } },
+    fileAdd(d) {
+      const p = get('person', d.id); if (!p) return;
+      pickImage(async (f) => {
+        let blob; try { blob = await resizeBlob(f, 1400, 0.75); } catch (e) { return toast(e.message); }
+        openForm('Label berkas', [{ k: 'label', label: 'Jenis berkas', req: true, list: FILE_LABELS }], { label: 'KTP' }, (v) => {
+          const rec = C.put(store, 'pfile', { personId: p.id, label: v.label, size: blob.size });
+          IDB.put(rec.id, blob).then(() => { commit(); toast('Berkas tersimpan di perangkat ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan berkas (penyimpanan penuh/dibatasi)'); });
+        });
+      });
+    },
+    fileOpen(d) { const f = get('pfile', d.id); if (f) viewFile(f); },
+    afWho(d) { ui.afWho = d.id; render(); }, afWa(d) { afSend('wa', d.id, d.i); }, afShare(d) { afSend('share', d.id, d.i); }, afCopy(d) { afSend('copy', d.id, d.i); },
+    draftAdd() { draftForm(); }, draftEdit(d) { draftForm(get('draft', d.id)); },
+    cardCat(d) { ui.cardCat = d.v; ui.cardShift = 0; render(); }, cardNext() { ui.cardShift++; render(); },
+    cardDone(d) { if (!list('ccard').some((c) => c.q === d.q)) C.put(store, 'ccard', { q: d.q, cat: d.cat, date: C.today() }); commit(); toast('Tersimpan di Riwayat'); },
+    notifTest() { if (!('Notification' in window) || Notification.permission !== 'granted') toast('Izinkan notifikasi dulu'); notify('RUMAHKU', detailOn() ? '💧 Uji pengingat: waktunya minum' : 'Ada pengingat', 'test'); render(); },
+    notifDetail() { cfg.notifDetail = !detailOn(); saveCfg(); render(); },
+    icsAll() { const items = icsItems(); if (!items.length) return toast('Belum ada pengingat ber-jam untuk diekspor'); downloadText('rumahku-pengingat.ics', C.buildICS(items), 'text/calendar'); toast(items.length + ' pengingat diekspor'); },
   };
 
   // ---------- data contoh (ditandai demo:true; dapat dihapus tanpa menyentuh data asli) ----------
@@ -853,24 +1207,43 @@
     syncTimer = setTimeout(() => { if (token && Date.now() < tokenExp - 60000) runSync(false); else syncMsg = 'perubahan belum disinkron (ketuk Sinkron sekarang)'; }, 4000);
   }
 
-  // ---------- pengingat (hanya saat aplikasi terbuka; judul generik) ----------
-  const fired = new Set();
-  function tick() {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    const n = new Date(), t = C.today(n), mins = n.getHours() * 60 + n.getMinutes();
-    evOccurrences(t, C.addDays(t, 1)).forEach((o) => {
-      if (!o.ev.time || o.ev.allDay) return;
-      const [h, m] = o.ev.time.split(':').map(Number), diff = h * 60 + m - mins, key = o.ev.id + t;
-      if (diff >= 0 && diff <= 10 && !fired.has(key)) { fired.add(key); try { new Notification('RUMAHKU', { body: 'Ada acara sebentar lagi', tag: key }); } catch (e) { /* abaikan */ } }
-    });
+  function rtBump(id, d) {
+    const r = get('rt', id); if (!r) return; const t = C.today(), lid = 'rl|' + id + '|' + t;
+    const cur = C.routineDone(list('rtlog'), id, t), n = Math.max(0, cur + d);
+    if (n === cur) return;
+    C.put(store, 'rtlog', { id: lid, routineId: id, date: t, n }); commit();
+    if (d > 0 && n === C.routineTarget(r)) toast('Target ' + r.name + ' tercapai 🎉');
   }
-  setInterval(tick, 60000);
+  function nextBirthday(birth, t) {
+    const b = C.parseD(birth), y = +t.slice(0, 4);
+    for (let yy = y; yy <= y + 1; yy++) { const m = String(b.getMonth() + 1).padStart(2, '0'), d = String(b.getDate()).padStart(2, '0'); const s = yy + '-' + m + '-' + d; if (s >= t) return s; }
+    return t;
+  }
+  // ---------- pengingat (rutinitas, tugas ber-jam, acara; judul generik bila "nama" dimatikan) ----------
+  function tick() {
+    const n = new Date(), t = C.today(n), mins = n.getHours() * 60 + n.getMinutes(), nowMs = n.getTime();
+    const fired = loadFired(t); let changed = false;
+    const fire = (key, body) => { if (fired.has(key)) return; fired.add(key); changed = true; notify('RUMAHKU', detailOn() ? body : 'Ada pengingat', key); };
+    const logs = list('rtlog').filter((l) => l.date === t);
+    list('rt').forEach((r) => { const d = C.routineDue(r, t, mins, C.routineDone(logs, r.id, t), fired); if (d) fire(d.key, (r.emoji || '🔔') + ' ' + r.name + ' — ' + d.done + '/' + d.target + (r.unit ? ' ' + r.unit : '')); });
+    list('task').forEach((x) => {
+      if (x.done || x.due !== t || !x.time || x.remind === '' || x.remind == null) return;
+      if (C.inWindow(nowMs, C.fireAt(t, x.time, x.remind))) fire('tk|' + x.id + '|' + t + '|' + x.time + '|' + x.remind, '✅ ' + x.title + (+x.remind > 0 ? ' — ' + x.remind + ' menit lagi' : ' — sekarang'));
+    });
+    evOccurrences(t, C.addDays(t, 1)).forEach((o) => {
+      if (!o.ev.time || o.ev.allDay || o.ev.remind === '') return;
+      const rm = o.ev.remind == null ? 10 : +o.ev.remind;
+      if (C.inWindow(nowMs, C.fireAt(t, o.ev.time, rm))) fire('ev|' + o.ev.id + '|' + t + '|' + o.ev.time, '📅 ' + o.ev.title + (rm > 0 ? ' — ' + rm + ' menit lagi' : ' — sekarang'));
+    });
+    if (changed) saveFired(t, fired);
+  }
+  setInterval(tick, 30000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { render(); tick(); } });
 
   // ---------- mulai ----------
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('sw.js').catch(() => { /* PWA opsional */ });
   }
-  window.__rk = { store: () => store, C };
+  window.__rk = { store: () => store, C, tick };
   render(); tick();
 })();

@@ -244,6 +244,8 @@
     const prev = store.rec[id] || {};
     store.rec[id] = Object.assign({}, prev, data, { id, _t: type, _u: nowISO || new Date().toISOString() });
     delete store.rec[id]._d;
+    // Data contoh yang diubah pengguna jadi milik pengguna: tidak ikut terhapus oleh "Hapus data contoh".
+    if (prev.demo && !('demo' in data)) delete store.rec[id].demo;
     return store.rec[id];
   }
   function remove(store, id, nowISO) {
@@ -274,11 +276,121 @@
     return !!s && s.v === 1 && s.rec && typeof s.rec === 'object' && !Array.isArray(s.rec);
   }
 
+  // ---------- v0.3: rutinitas harian, pengingat, profil ----------
+  function greeting(hour) { return hour >= 4 && hour < 11 ? 'Selamat pagi' : hour >= 11 && hour < 15 ? 'Selamat siang' : hour >= 15 && hour < 18 ? 'Selamat sore' : 'Selamat malam'; }
+  function toMin(hm) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm || ''));
+    if (!m || +m[1] > 23 || +m[2] > 59) return null;
+    return +m[1] * 60 + +m[2];
+  }
+  const fmtHM = (min) => pad(Math.floor(min / 60)) + ':' + pad(min % 60);
+  // Jam pengingat dalam sehari: tepat 1 jam bila everyMin kosong, selain itu dari 'from' sampai 'to' tiap everyMin (maks 48 slot).
+  function routineTimes(r) {
+    const a = toMin(r.from);
+    if (a == null) return [];
+    const step = +r.everyMin || 0;
+    if (step < 5) return [fmtHM(a)];
+    const b = toMin(r.to);
+    const end = b == null || b < a ? a : b, out = [];
+    for (let m = a; m <= end && out.length < 48; m += step) out.push(fmtHM(m));
+    return out;
+  }
+  function routineActiveOn(r, dateS) {
+    const d = r.days;
+    if (!d || !d.length) return true;
+    return d.indexOf(parseD(dateS).getDay()) >= 0;
+  }
+  const routineTarget = (r) => Math.max(1, Math.round(+r.target) || 1);
+  function routineDone(logs, rid, dateS) {
+    return logs.reduce((s, l) => (l.routineId === rid && l.date === dateS ? s + (+l.n || 0) : s), 0);
+  }
+  // Slot terakhir yang sudah lewat dan belum diingatkan; null bila sudah sesuai laju / terlalu lama lewat (graceMin).
+  function routineDue(r, dateS, nowMin, done, firedKeys, graceMin) {
+    if (!routineActiveOn(r, dateS) || r.paused) return null;
+    const times = routineTimes(r), target = routineTarget(r);
+    if (!times.length || done >= target) return null;
+    let idx = -1;
+    times.forEach((t, i) => { if (toMin(t) <= nowMin) idx = i; });
+    if (idx < 0) return null;
+    const at = toMin(times[idx]);
+    if (nowMin - at > (graceMin == null ? 20 : graceMin)) return null;
+    const expected = Math.ceil(target * (idx + 1) / times.length);
+    if (done >= expected) return null;
+    const key = r.id + '|' + dateS + '|' + times[idx];
+    if (firedKeys && firedKeys.has(key)) return null;
+    return { key, time: times[idx], expected, done, target };
+  }
+  // Target yang seharusnya sudah tercapai pada menit tertentu (untuk indikator laju).
+  function routineExpected(r, nowMin) {
+    const times = routineTimes(r), target = routineTarget(r);
+    let n = 0; times.forEach((t) => { if (toMin(t) <= nowMin) n++; });
+    return times.length ? Math.ceil(target * n / times.length) : 0;
+  }
+  // Saat pengingat (epoch ms, jam lokal) untuk item bertanggal+jam; remindMin = berapa menit sebelumnya.
+  function fireAt(dateS, hm, remindMin) {
+    const m = toMin(hm); if (m == null) return null;
+    const d = parseD(dateS); d.setHours(0, 0, 0, 0);
+    return d.getTime() + (m - (+remindMin || 0)) * 60000;
+  }
+  function inWindow(nowMs, atMs, graceMin) { return atMs != null && nowMs >= atMs && nowMs - atMs <= (graceMin || 30) * 60000; }
+  function maskId(s) {
+    const t = String(s || '').replace(/\s+/g, '');
+    if (t.length <= 4) return '••••';
+    if (t.length <= 8) return '••••' + t.slice(-2);
+    return t.slice(0, 4) + '•'.repeat(t.length - 8) + t.slice(-4);
+  }
+  function ageOn(birth, todayS) {
+    if (!birth) return null;
+    const b = parseD(birth), t = parseD(todayS);
+    let a = t.getFullYear() - b.getFullYear();
+    if (t.getMonth() < b.getMonth() || (t.getMonth() === b.getMonth() && t.getDate() < b.getDate())) a--;
+    return a >= 0 ? a : null;
+  }
+  // Nomor WhatsApp internasional tanpa tanda: 0812-xxx -> 62812xxx (Indonesia); "+62 8.." -> 628..
+  function waNumber(phone) {
+    let d = String(phone || '').replace(/[^\d+]/g, '');
+    const plus = d.startsWith('+'); d = d.replace(/\D/g, '');
+    if (!d) return '';
+    if (!plus && d.startsWith('0')) d = '62' + d.slice(1);
+    else if (!plus && d.startsWith('8')) d = '62' + d;
+    return d.length >= 8 && d.length <= 15 ? d : '';
+  }
+
+  // ICS: pengingat nyata di HP lewat aplikasi Kalender (jalan walau aplikasi ini tertutup).
+  const icsEsc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c);
+  function icsFold(line) {
+    const out = []; let cur = '';
+    for (const ch of line) { if ((cur + ch).length > 60) { out.push(cur); cur = ' ' + ch; } else cur += ch; }
+    out.push(cur); return out.join('\r\n');
+  }
+  // items: [{uid,title,date:'YYYY-MM-DD',time:'HH:MM',rrule?,alarmMin?,desc?}] -> teks .ics (waktu "mengambang" = jam lokal pengguna)
+  function buildICS(items, nowISO) {
+    const stamp = String(nowISO || new Date().toISOString()).replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//RUMAHKU-ONE Lite//ID', 'CALSCALE:GREGORIAN'];
+    items.forEach((it) => {
+      const st = toMin(it.time); if (st == null || !it.date) return;
+      const d = it.date.replace(/-/g, ''), en = Math.min(st + 5, 23 * 60 + 59);
+      L.push('BEGIN:VEVENT', 'UID:' + it.uid + '@rumahku', 'DTSTAMP:' + stamp, 'DTSTART:' + d + 'T' + fmtHM(st).replace(':', '') + '00', 'DTEND:' + d + 'T' + fmtHM(en).replace(':', '') + '00');
+      if (it.rrule) L.push('RRULE:' + it.rrule);
+      L.push('SUMMARY:' + icsEsc(it.title));
+      if (it.desc) L.push('DESCRIPTION:' + icsEsc(it.desc));
+      L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(it.title), 'TRIGGER:-PT' + (+it.alarmMin || 0) + 'M', 'END:VALARM', 'END:VEVENT');
+    });
+    L.push('END:VCALENDAR');
+    return L.map(icsFold).join('\r\n') + '\r\n';
+  }
+  const DAY_ICS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+  function routineICS(r, startDate) {
+    const rr = 'FREQ=' + (r.days && r.days.length ? 'WEEKLY;BYDAY=' + r.days.map((x) => DAY_ICS[x]).join(',') : 'DAILY');
+    return routineTimes(r).map((t, i) => ({ uid: r.id + '-' + i, title: (r.emoji ? r.emoji + ' ' : '') + r.name, date: startDate, time: t, rrule: rr, alarmMin: 0 }));
+  }
+
   return {
     uid, dstr, today, parseD, addDays, addMonths, nextDate, cmp,
     completeTask, expandEvent, fmtIDR, parseAmount, liveTx, balances, netWorth,
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
     kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, maskId, ageOn, buildICS, routineICS,
   };
 });

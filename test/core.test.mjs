@@ -179,3 +179,66 @@ test('kmLeft', () => {
   assert.equal(C.kmLeft({}, 12300), null);
   assert.equal(C.kmLeft({ nextKm: 100 }, null), null);
 });
+
+// ---------- v0.3 ----------
+test('greeting menurut jam', () => {
+  assert.equal(C.greeting(7), 'Selamat pagi'); assert.equal(C.greeting(12), 'Selamat siang');
+  assert.equal(C.greeting(16), 'Selamat sore'); assert.equal(C.greeting(21), 'Selamat malam'); assert.equal(C.greeting(2), 'Selamat malam');
+});
+test('routineTimes: tiap jam dari-sampai, satu kali, dan batas', () => {
+  assert.deepEqual(C.routineTimes({ from: '08:00', to: '11:00', everyMin: 60 }), ['08:00', '09:00', '10:00', '11:00']);
+  assert.deepEqual(C.routineTimes({ from: '07:30' }), ['07:30']);
+  assert.deepEqual(C.routineTimes({ from: 'xx' }), []);
+  assert.equal(C.routineTimes({ from: '00:00', to: '23:59', everyMin: 5 }).length, 48);
+});
+test('routineDue: mengingatkan sesuai laju, tidak dua kali, berhenti bila target tercapai', () => {
+  const r = { id: 'r', target: 8, from: '08:00', to: '15:00', everyMin: 60 }; // 8 slot
+  const fired = new Set();
+  const d1 = C.routineDue(r, '2026-11-14', 8 * 60 + 2, 0, fired);
+  assert.equal(d1.time, '08:00'); fired.add(d1.key);
+  assert.equal(C.routineDue(r, '2026-11-14', 8 * 60 + 3, 0, fired), null, 'tidak diulang');
+  assert.equal(C.routineDue(r, '2026-11-14', 9 * 60 + 1, 2, fired), null, 'sudah sesuai laju (2 >= 2)');
+  assert.equal(C.routineDue(r, '2026-11-14', 9 * 60 + 1, 1, fired).expected, 2);
+  assert.equal(C.routineDue(r, '2026-11-14', 9 * 60 + 40, 0, fired), null, 'lewat batas toleransi 20 menit');
+  assert.equal(C.routineDue(r, '2026-11-14', 12 * 60, 8, fired), null, 'target tercapai');
+  assert.equal(C.routineDue(Object.assign({}, r, { paused: true }), '2026-11-14', 9 * 60, 0, fired), null);
+});
+test('routineActiveOn & routineDone', () => {
+  const r = { days: [1, 2, 3, 4, 5] }; // 2026-11-14 = Sabtu
+  assert.equal(C.routineActiveOn(r, '2026-11-14'), false); assert.equal(C.routineActiveOn(r, '2026-11-16'), true);
+  assert.equal(C.routineActiveOn({}, '2026-11-14'), true);
+  const logs = [{ routineId: 'a', date: '2026-11-14', n: 2 }, { routineId: 'a', date: '2026-11-14', n: 1 }, { routineId: 'b', date: '2026-11-14', n: 5 }, { routineId: 'a', date: '2026-11-13', n: 9 }];
+  assert.equal(C.routineDone(logs, 'a', '2026-11-14'), 3);
+});
+test('fireAt/inWindow: pengingat sebelum jam tugas', () => {
+  const at = C.fireAt('2026-11-14', '09:00', 30);
+  assert.equal(new Date(at).getHours(), 8); assert.equal(new Date(at).getMinutes(), 30);
+  assert.equal(C.inWindow(at + 60000, at), true); assert.equal(C.inWindow(at - 1, at), false); assert.equal(C.inWindow(at + 31 * 60000, at), false);
+  assert.equal(C.fireAt('2026-11-14', '', 0), null);
+});
+test('maskId & ageOn', () => {
+  assert.equal(C.maskId('3201 0101 9001 0002'), '3201••••••••0002'); assert.equal(C.maskId('1234'), '••••'); assert.equal(C.maskId(''), '••••');
+  assert.equal(C.ageOn('1990-11-15', '2026-11-14'), 35); assert.equal(C.ageOn('1990-11-14', '2026-11-14'), 36); assert.equal(C.ageOn('', '2026-11-14'), null);
+});
+test('buildICS: CRLF, escape, VALARM, RRULE', () => {
+  const ics = C.buildICS([{ uid: 'x1', title: 'Minum, air; sekarang', date: '2026-11-15', time: '08:00', rrule: 'FREQ=DAILY', alarmMin: 10 }], '2026-11-14T01:02:03.000Z');
+  assert.ok(ics.includes('\r\n') && !/[^\r]\n/.test(ics));
+  assert.ok(ics.includes('SUMMARY:Minum\\, air\\; sekarang')); assert.ok(ics.includes('TRIGGER:-PT10M')); assert.ok(ics.includes('RRULE:FREQ=DAILY'));
+  assert.ok(ics.includes('DTSTART:20261115T080000')); assert.ok(ics.startsWith('BEGIN:VCALENDAR') && ics.trim().endsWith('END:VCALENDAR'));
+  assert.equal(C.buildICS([{ uid: 'y', title: 't', date: '2026-11-15', time: 'bad' }]).includes('VEVENT'), false);
+  const rs = C.routineICS({ id: 'r', name: 'Obat', from: '07:00', days: [1, 3] }, '2026-11-15');
+  assert.equal(rs.length, 1); assert.equal(rs[0].rrule, 'FREQ=WEEKLY;BYDAY=MO,WE');
+});
+test('waNumber: normalisasi nomor Indonesia', () => {
+  assert.equal(C.waNumber('0812-3456-7890'), '6281234567890'); assert.equal(C.waNumber('+62 812 3456 7890'), '6281234567890');
+  assert.equal(C.waNumber('81234567890'), '6281234567890'); assert.equal(C.waNumber('119'), ''); assert.equal(C.waNumber(''), '');
+  assert.equal(C.waNumber('+1 415 555 0100'), '14155550100');
+});
+test('data contoh yang diubah pengguna tidak lagi bertanda demo', () => {
+  const st = C.emptyStore(); const r = C.put(st, 'plan', { name: 'Servis AC', demo: true });
+  assert.equal(st.rec[r.id].demo, true);
+  C.put(st, 'plan', { id: r.id, name: 'Servis AC ruang tamu' });
+  assert.equal(st.rec[r.id].demo, undefined);
+  const r2 = C.put(st, 'plan', { name: 'Lain', demo: true }); C.put(st, 'plan', { id: r2.id, demo: true });
+  assert.equal(st.rec[r2.id].demo, true);
+});
