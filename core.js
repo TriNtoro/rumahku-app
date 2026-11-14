@@ -371,6 +371,46 @@
     return out.sort((a, b) => cmp(a.date, b.date) || cmp(a.time || '', b.time || '') || cmp(a.title, b.title));
   }
 
+  // ---------- berat badan & IMT (klasifikasi Kemenkes RI / P2PTM 2018; hanya untuk dewasa >= 18 th) ----------
+  function bmi(kg, cm) {
+    kg = +kg; cm = +cm;
+    if (!(kg > 0) || !(cm > 0)) return null;
+    const m = cm / 100; return Math.round(kg / (m * m) * 10) / 10;
+  }
+  // < 17 sangat kurus; 17.0-18.4 kurus; 18.5-25.0 normal; 25.1-27.0 gemuk (kelebihan BB ringan); > 27 obesitas
+  function bmiCategory(b) {
+    if (b == null) return null;
+    if (b < 17) return { key: 'sangat-kurus', label: 'Sangat kurus', level: 'low' };
+    if (b < 18.5) return { key: 'kurus', label: 'Kurus', level: 'low' };
+    if (b <= 25) return { key: 'normal', label: 'Normal', level: 'ok' };
+    if (b <= 27) return { key: 'gemuk', label: 'Gemuk (kelebihan berat badan ringan)', level: 'warn' };
+    return { key: 'obesitas', label: 'Obesitas', level: 'high' };
+  }
+  // Rentang berat badan normal (IMT 18.5-25.0) untuk tinggi tertentu.
+  function healthyRange(cm) {
+    cm = +cm; if (!(cm > 0)) return null;
+    const m2 = Math.pow(cm / 100, 2);
+    const r1 = (x) => Math.round(x * 10 + 1e-6) / 10;
+    return { min: r1(18.5 * m2), max: r1(25 * m2) };
+  }
+  // Lingkar perut berisiko (obesitas sentral): pria >= 90 cm, wanita >= 80 cm.
+  function waistRisk(sex, cm) { cm = +cm; if (!(cm > 0) || (sex !== 'L' && sex !== 'P')) return null; return cm >= (sex === 'L' ? 90 : 80); }
+  // logs: [{date,kg}] -> titik terurut, satu per tanggal (yang terakhir menang)
+  function weightSeries(logs) {
+    const m = {}; logs.forEach((l) => { if (l.date && +l.kg > 0) m[l.date] = +l.kg; });
+    return Object.keys(m).sort().map((d) => ({ date: d, kg: m[d] }));
+  }
+  // Perubahan kg per minggu dari data dalam `days` hari terakhir (regresi garis lurus sederhana); null bila data kurang.
+  function weeklyRate(series, todayS, days) {
+    const from = addDays(todayS, -(days || 14)), pts = series.filter((p) => p.date >= from && p.date <= todayS);
+    if (pts.length < 3) return null;
+    const x0 = parseD(pts[0].date).getTime(), xs = pts.map((p) => (parseD(p.date).getTime() - x0) / 86400000), ys = pts.map((p) => p.kg);
+    const n = pts.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+    const den = xs.reduce((a, x) => a + (x - mx) * (x - mx), 0); if (den === 0) return null;
+    const slope = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / den;
+    return Math.round(slope * 7 * 100) / 100;
+  }
+
   // Nomor WhatsApp internasional tanpa tanda: 0812-xxx -> 62812xxx (Indonesia); "+62 8.." -> 628..
   function waNumber(phone) {
     let d = String(phone || '').replace(/[^\d+]/g, '');
@@ -416,6 +456,6 @@
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
     kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
-    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, maskId, ageOn, buildICS, routineICS,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
   };
 });

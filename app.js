@@ -23,6 +23,14 @@
     { name: 'Ganti oli', every: 2, unit: 'month', kmEvery: 2500 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 },
     { name: 'Cek tekanan & kondisi ban', every: 1, unit: 'month', kmEvery: 0 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 },
   ];
+  const VEH_PLANS = {
+    motor: [{ name: 'Ganti oli mesin', every: 2, unit: 'month', kmEvery: 2500 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Cek tekanan & kondisi ban', every: 1, unit: 'month', kmEvery: 0 }, { name: 'Cek rem & kampas', every: 6, unit: 'month', kmEvery: 8000 }, { name: 'Ganti busi & filter udara', every: 12, unit: 'month', kmEvery: 10000 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 }],
+    mobil: [{ name: 'Ganti oli mesin', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Rotasi & cek ban', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Cek rem & minyak rem', every: 12, unit: 'month', kmEvery: 20000 }, { name: 'Ganti filter udara & filter AC', every: 12, unit: 'month', kmEvery: 20000 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti air radiator / coolant', every: 24, unit: 'month', kmEvery: 0 }],
+    motor_ev: [{ name: 'Cek kondisi baterai & charger', every: 6, unit: 'month', kmEvery: 0 }, { name: 'Servis berkala (ikuti buku servis)', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Cek rem & kampas', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Cek tekanan & kondisi ban', every: 1, unit: 'month', kmEvery: 0 }, { name: 'Cek kelistrikan & pembaruan software', every: 12, unit: 'month', kmEvery: 0 }],
+    mobil_ev: [{ name: 'Cek kesehatan baterai & sistem pengisian', every: 6, unit: 'month', kmEvery: 0 }, { name: 'Servis berkala (ikuti buku servis)', every: 12, unit: 'month', kmEvery: 15000 }, { name: 'Rotasi & cek ban', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Ganti filter kabin AC', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti cairan rem', every: 24, unit: 'month', kmEvery: 0 }, { name: 'Cek sistem pendingin baterai', every: 24, unit: 'month', kmEvery: 0 }],
+  };
+  const vehPlansFor = (kind) => VEH_PLANS[kind] || VEH_PLANS.mobil;
+  const VEH_KINDS = [['motor', 'Motor'], ['mobil', 'Mobil'], ['motor_ev', 'Motor listrik (EV)'], ['mobil_ev', 'Mobil listrik (EV)'], ['lain', 'Lainnya']];
   const BILL_NAMES = ['Listrik PLN', 'Internet', 'PDAM / air', 'PBB', 'Iuran RT / sampah', 'Gas', 'Asuransi', 'Cicilan', 'Langganan streaming'];
 
   // ---------- state ----------
@@ -75,6 +83,7 @@
     if (f.type === 'select') inner = `<select name="${f.k}">${f.opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
     else if (f.type === 'textarea') inner = `<textarea name="${f.k}" rows="3">${esc(val)}</textarea>`;
     else if (f.type === 'amount') inner = `<input name="${f.k}" inputmode="numeric" autocomplete="off" placeholder="mis. 25.000" value="${esc(val)}">`;
+    else if (f.type === 'dec') inner = `<input name="${f.k}" inputmode="decimal" autocomplete="off" placeholder="${esc(f.ph || '')}" value="${esc(val)}">`;
     else if (f.type === 'number') inner = `<input name="${f.k}" type="number" inputmode="numeric" min="0" value="${esc(val)}">`;
     else inner = `<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" ${f.list ? 'list="dl-' + f.k + '"' : ''} autocomplete="off">` + (f.list ? `<datalist id="dl-${f.k}">${f.list.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>` : '');
     return `<label class="f">${esc(f.label)}${f.req ? ' *' : ''}${inner}</label>`;
@@ -250,7 +259,7 @@
     });
   }
   function templateForm(vehId) {
-    const tpls = vehId ? VEH_TEMPLATES.map((t) => Object.assign({ g: 'kendaraan' }, t)) : TEMPLATES;
+    const tpls = vehId ? vehPlansFor((get('veh', vehId) || {}).kind).map((t) => Object.assign({ g: 'kendaraan' }, t)) : TEMPLATES;
     openForm('Pilih template', tpls.map((t, i) => ({ k: 't' + i, label: t.name + ' · ' + C.intervalLabel(t) + (t.kmEvery ? ' / ' + num(t.kmEvery) + ' km' : ''), type: 'check' })), {}, (v) => {
       let n = 0; const today = C.today(); const veh = vehId ? get('veh', vehId) : null;
       tpls.forEach((t, i) => {
@@ -267,7 +276,7 @@
     v0 = v0 || {};
     openForm(v0.id ? 'Ubah kendaraan' : 'Kendaraan baru', [
       { k: 'name', label: 'Nama (mis. Honda Beat, Avanza)', req: true },
-      { k: 'kind', label: 'Jenis', type: 'select', opts: [['motor', 'Motor'], ['mobil', 'Mobil'], ['lain', 'Lainnya']] },
+      { k: 'kind', label: 'Jenis', type: 'select', opts: VEH_KINDS },
       { k: 'plate', label: 'Plat nomor (opsional)' }, { k: 'year', label: 'Tahun', type: 'number' },
       { k: 'odometer', label: 'Odometer sekarang (km)', type: 'number' },
       { k: 'pajakDue', label: 'Pajak tahunan jatuh tempo', type: 'date' }, { k: 'stnkDue', label: 'Ganti plat/STNK 5 tahunan', type: 'date' },
@@ -326,7 +335,7 @@
     }, null, note);
   }
   const TPL = {
-    veh: [{ name: 'Motor', kind: 'motor' }, { name: 'Mobil', kind: 'mobil' }],
+    veh: [{ name: 'Motor', kind: 'motor' }, { name: 'Mobil', kind: 'mobil' }, { name: 'Motor listrik (EV)', kind: 'motor_ev' }, { name: 'Mobil listrik (EV)', kind: 'mobil_ev' }],
     asset: [['Kulkas', 'Elektronik'], ['Mesin cuci', 'Elektronik'], ['AC', 'Elektronik'], ['TV', 'Elektronik'], ['Laptop', 'Elektronik'], ['HP keluarga', 'Elektronik'], ['Rice cooker', 'Elektronik'], ['Dispenser air', 'Elektronik'], ['Water heater', 'Elektronik'], ['Kompor', 'Elektronik'], ['Sofa', 'Perabot'], ['Kasur', 'Perabot'], ['Lemari', 'Perabot'], ['Meja makan', 'Perabot'], ['Atap/genteng', 'Bangunan'], ['Pagar', 'Bangunan']],
     inv: [['Beras', 'kg', 2], ['Gas LPG 3 kg', 'tabung', 1], ['Galon air minum', 'galon', 1], ['Minyak goreng', 'liter', 1], ['Telur', 'kg', 1], ['Gula', 'kg', 1], ['Garam', 'bungkus', 1], ['Sabun mandi', 'pcs', 2], ['Sabun cuci piring', 'pcs', 1], ['Deterjen', 'pcs', 1], ['Tisu', 'pak', 2], ['Obat P3K (plester, antiseptik)', 'set', 1], ['Obat demam', 'strip', 1], ['Lampu cadangan', 'pcs', 1]],
     contact: [['Polisi', 'Darurat', '110', true], ['Ambulans', 'Darurat', '118', true], ['Pemadam kebakaran', 'Darurat', '113', true], ['SAR / Basarnas', 'Darurat', '115', true], ['Nomor darurat umum', 'Darurat', '112', true], ['PLN (gangguan listrik)', 'Layanan', '123', false], ['Ketua RT', 'Lingkungan', '', false], ['Satpam / keamanan', 'Lingkungan', '', false], ['Tukang listrik', 'Tukang', '', false], ['Tukang ledeng', 'Tukang', '', false], ['Tukang AC', 'Tukang', '', false], ['Dokter keluarga', 'Kesehatan', '', false], ['Bengkel langganan', 'Kendaraan', '', false], ['Sekolah anak', 'Keluarga', '', false]],
@@ -339,8 +348,8 @@
     veh() {
       pickTemplates('Tambah kendaraan', TPL.veh, (t) => t.name + ' (lengkap dengan jadwal servis standar)', (t) => {
         const v = C.put(store, 'veh', { name: t.name, kind: t.kind, plate: '', odometer: '' });
-        VEH_TEMPLATES.forEach((tp) => C.put(store, 'plan', { name: tp.name, group: 'kendaraan', every: tp.every, unit: tp.unit, nextDue: C.planNext(tp, C.today()), vehicleId: v.id, kmEvery: tp.kmEvery || 0, nextKm: 0, cost: 0 }));
-      }, 'Isi plat, odometer, pajak, dan STNK dengan mengetuk nama kendaraan. Jadwal servis ikut dibuat dari hari ini.');
+        vehPlansFor(t.kind).forEach((tp) => C.put(store, 'plan', { name: tp.name, group: 'kendaraan', every: tp.every, unit: tp.unit, nextDue: C.planNext(tp, C.today()), vehicleId: v.id, kmEvery: tp.kmEvery || 0, nextKm: 0, cost: 0 }));
+      }, 'Isi plat, odometer, pajak, dan STNK dengan mengetuk nama kendaraan. Jadwal servis ikut dibuat dari hari ini dengan interval umum; sesuaikan dengan buku servis kendaraan Anda (ketuk Ubah di tiap jadwal).');
     },
     asset() { pickTemplates('Pilih aset', TPL.asset, (t) => t[0] + ' · ' + t[1], (t) => C.put(store, 'asset', { name: t[0], cat: t[1], price: 0 }), 'Isi tanggal beli, harga, dan garansi setelahnya.'); },
     inv() { pickTemplates('Pilih barang stok', TPL.inv, (t) => t[0] + ' (min ' + t[2] + ' ' + t[1] + ')', (t) => C.put(store, 'inv', { name: t[0], qty: 0, unit: t[1], min: t[2] }), 'Jumlah awal 0; atur stok sebenarnya dengan tombol + / −.'); },
@@ -412,13 +421,38 @@
   const ID_KINDS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan', 'Akta lahir', 'Lainnya'];
   const FILE_LABELS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'Akta lahir', 'Foto', 'Lainnya'];
   const RT_EMOJI = ['💧', '💊', '🏃', '👀', '💌', '📖', '🧘', '🍎', '😴', '⭐'];
+  const T = (g, emoji, name, target, unit, from, to, everyMin, days) => ({ g, emoji, name, target, unit, from, to: to || '', everyMin: everyMin || 0, days: days || [] });
+  const WK = [1, 2, 3, 4, 5];
   const RT_TEMPLATES = [
-    { name: 'Minum air 2 liter', emoji: '💧', target: 8, unit: 'gelas (250 ml)', from: '08:00', to: '20:00', everyMin: 60, days: [] },
-    { name: 'Vitamin / obat pagi', emoji: '💊', target: 1, unit: 'kali', from: '07:00', to: '', everyMin: 0, days: [] },
-    { name: 'Olahraga ringan', emoji: '🏃', target: 1, unit: 'sesi', from: '17:00', to: '', everyMin: 0, days: [] },
-    { name: 'Istirahat mata & regangkan badan', emoji: '👀', target: 6, unit: 'kali', from: '09:00', to: '16:00', everyMin: 60, days: [1, 2, 3, 4, 5] },
-    { name: 'Kabari keluarga', emoji: '💌', target: 1, unit: 'kabar', from: '12:30', to: '', everyMin: 0, days: [] },
-    { name: 'Baca buku 15 menit', emoji: '📖', target: 1, unit: 'sesi', from: '20:30', to: '', everyMin: 0, days: [] },
+    T('Kesehatan', '💧', 'Minum air 2 liter', 8, 'gelas (250 ml)', '08:00', '20:00', 60),
+    T('Kesehatan', '💊', 'Vitamin / obat pagi', 1, 'kali', '07:00'),
+    T('Kesehatan', '🏃', 'Olahraga ringan 30 menit', 1, 'sesi', '17:00'),
+    T('Kesehatan', '🚶', 'Jalan kaki / senam pagi', 1, 'sesi', '05:30'),
+    T('Kesehatan', '⚖️', 'Timbang berat badan', 1, 'kali', '06:30'),
+    T('Kesehatan', '😴', 'Bersiap tidur (HP dimatikan)', 1, 'kali', '21:30'),
+    T('Ibu & rumah', '🍳', 'Siapkan sarapan keluarga', 1, 'kali', '05:30'),
+    T('Ibu & rumah', '🎒', 'Antar anak sekolah', 1, 'kali', '06:30', '', 0, WK),
+    T('Ibu & rumah', '🛒', 'Belanja sayur / ke pasar', 1, 'kali', '07:00', '', 0, [1, 2, 3, 4, 5, 6]),
+    T('Ibu & rumah', '🍲', 'Masak makan siang', 1, 'kali', '10:30'),
+    T('Ibu & rumah', '🧺', 'Cuci & setrika pakaian', 1, 'kali', '09:00'),
+    T('Ibu & rumah', '🧹', 'Bersih-bersih rumah', 1, 'kali', '08:00'),
+    T('Ibu & rumah', '🚸', 'Jemput anak sekolah', 1, 'kali', '12:30', '', 0, WK),
+    T('Ibu & rumah', '🧸', 'Main bareng anak', 1, 'sesi', '16:30'),
+    T('Ibu & rumah', '📚', 'Temani anak belajar', 1, 'sesi', '19:00'),
+    T('Ibu & rumah', '📝', 'Cek PR & tas sekolah anak', 1, 'kali', '20:00', '', 0, WK),
+    T('Ibu & rumah', '📖', 'Baca cerita sebelum tidur', 1, 'sesi', '20:30'),
+    T('Ibu & rumah', '👕', 'Siapkan seragam & bekal besok', 1, 'kali', '21:00', '', 0, [0, 1, 2, 3, 4]),
+    T('Ibu & rumah', '🍽️', 'Beres dapur & cuci piring malam', 1, 'kali', '20:30'),
+    T('Keluarga', '💌', 'Kabari keluarga', 1, 'kabar', '12:30'),
+    T('Keluarga', '💑', 'Ngobrol berdua tanpa HP', 1, 'sesi', '21:00'),
+    T('Keluarga', '👵', 'Telepon orang tua', 1, 'kali', '18:30', '', 0, [0, 6]),
+    T('Kerja', '📧', 'Cek email & pesan kerja', 1, 'kali', '08:30', '', 0, WK),
+    T('Kerja', '🎯', 'Tentukan 3 prioritas hari ini', 1, 'kali', '08:00', '', 0, WK),
+    T('Kerja', '👀', 'Istirahat mata & regangkan badan', 6, 'kali', '09:00', '16:00', 60, WK),
+    T('Kerja', '✅', 'Tutup hari kerja & catat besok', 1, 'kali', '17:00', '', 0, WK),
+    T('Pribadi', '📖', 'Baca buku 15 menit', 1, 'sesi', '20:30'),
+    T('Pribadi', '🙏', 'Tulis 3 hal yang disyukuri', 1, 'kali', '21:00'),
+    T('Pribadi', '💰', 'Catat pengeluaran hari ini', 1, 'kali', '20:00'),
   ];
   // Draf kabar: bahasa sehari-hari yang hangat (bukan baku). {nama}=panggilan penerima, {saya}=nama Anda, {sebutan}=sebutan Anda untuk anak.
   const DRAFTS = {
@@ -494,8 +528,71 @@
     openForm('Profil saya', [
       { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Nama panggilan (dipakai di sapaan)' }, { k: 'birth', label: 'Tanggal lahir saya (muncul di kalender)', type: 'date' },
       { k: 'callKid', label: 'Sebutan Anda untuk anak (mis. Papa, Ayah, Bunda)' },
-    ], { name: p.name, nick: p.nick, birth: p.birth || '', callKid: p.callKid || '' }, (v) => { C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, birth: v.birth, callKid: v.callKid }); commit(); toast('Profil disimpan'); },
+      { k: 'sex', label: 'Jenis kelamin (untuk fitur berat badan)', type: 'select', opts: [['', '— pilih —'], ['L', 'Laki-laki'], ['P', 'Perempuan']] }, { k: 'height', label: 'Tinggi badan (cm)', type: 'dec', ph: 'mis. 165' },
+    ], { name: p.name, nick: p.nick, birth: p.birth || '', callKid: p.callKid || '', sex: p.sex || '', height: p.height || '' }, (v) => { const h = parseDec(v.height); if (v.height && (!h || h < 80 || h > 250)) return 'Tinggi badan harus antara 80–250 cm.'; C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, birth: v.birth, callKid: v.callKid, sex: v.sex, height: h || '' }); commit(); toast('Profil disimpan'); },
     null, 'Nama ini dipakai untuk sapaan "Selamat pagi, …" dan draf kabar. Tersimpan di perangkat Anda (dan di Drive bila sinkron aktif).');
+  }
+
+  // --- berat badan & IMT ---
+  const parseDec = (x) => { const n = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isFinite(n) ? n : 0; };
+  const fmtKg = (n) => String(Math.round(n * 10) / 10).replace('.', ',');
+  function wtForm(w) {
+    const p = profile();
+    openForm(w ? 'Ubah berat badan' : 'Catat berat badan', [
+      { k: 'date', label: 'Tanggal', type: 'date', req: true }, { k: 'kg', label: 'Berat badan (kg)', type: 'dec', ph: 'mis. 62,5', req: true },
+      { k: 'waist', label: 'Lingkar perut (cm, opsional)', type: 'dec', ph: 'diukur di sejajar pusar' },
+    ], w ? { date: w.date, kg: String(w.kg).replace('.', ','), waist: w.waist || '' } : { date: C.today(), kg: '', waist: '' }, (v) => {
+      const kg = parseDec(v.kg), wa = parseDec(v.waist);
+      if (!(kg >= 20 && kg <= 300)) return 'Berat badan harus antara 20–300 kg.';
+      if (v.waist && !(wa >= 30 && wa <= 250)) return 'Lingkar perut harus antara 30–250 cm.';
+      if (v.date > C.today()) return 'Tanggal tidak boleh di masa depan.';
+      C.put(store, 'wt', { id: 'wt|' + v.date, date: v.date, kg: Math.round(kg * 10) / 10, waist: wa || '' });
+      if (w && w.date !== v.date) C.remove(store, w.id);
+      commit(); toast('Tercatat');
+    }, w ? [{ label: 'Hapus catatan', fn: () => { C.remove(store, w.id); commit(); } }] : null, p.height ? '' : 'Isi tinggi badan & jenis kelamin di Profil saya agar IMT dihitung.');
+  }
+  function weightChart(ser, hr) {
+    if (ser.length < 2) return '<div class="empty">Catat minimal 2 kali untuk melihat grafik.</div>';
+    const pts = ser.slice(-60), W = 320, H = 170, L = 34, R = 10, T = 10, B = 24;
+    let lo = Math.min.apply(null, pts.map((p) => p.kg)), hi = Math.max.apply(null, pts.map((p) => p.kg));
+    if (hr) { lo = Math.min(lo, hr.min); hi = Math.max(hi, hr.max); }
+    lo = Math.floor(lo - 1); hi = Math.ceil(hi + 1);
+    const t0 = C.parseD(pts[0].date).getTime(), t1 = C.parseD(pts[pts.length - 1].date).getTime() || t0 + 1;
+    const X = (d) => L + (t1 === t0 ? 0 : (C.parseD(d).getTime() - t0) / (t1 - t0)) * (W - L - R), Y = (k) => T + (1 - (k - lo) / (hi - lo)) * (H - T - B);
+    let g = '';
+    for (let i = 0; i <= 3; i++) { const v = lo + (hi - lo) * i / 3; g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e4e4e7" stroke-width="1"/><text x="${L - 4}" y="${Y(v) + 3}" font-size="9" text-anchor="end" fill="#71717a">${Math.round(v)}</text>`; }
+    const band = hr ? `<rect x="${L}" y="${Y(hr.max)}" width="${W - L - R}" height="${Math.max(2, Y(hr.min) - Y(hr.max))}" fill="#10b981" opacity=".13"/>` : '';
+    const line = pts.map((p) => X(p.date).toFixed(1) + ',' + Y(p.kg).toFixed(1)).join(' ');
+    const dots = pts.length <= 40 ? pts.map((p) => `<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="2.8" fill="#2563eb"/>`).join('') : '';
+    const fd = (d) => d.slice(8) + '/' + d.slice(5, 7);
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik berat badan ${fd(pts[0].date)} sampai ${fd(pts[pts.length - 1].date)}" style="width:100%;height:auto">${band}${g}<polyline points="${line}" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>${dots}<text x="${L}" y="${H - 6}" font-size="9" fill="#71717a">${fd(pts[0].date)}</text><text x="${W - R}" y="${H - 6}" font-size="9" text-anchor="end" fill="#71717a">${fd(pts[pts.length - 1].date)}</text></svg>${hr ? '<div class="s" style="text-align:center">Pita hijau = rentang berat normal untuk tinggi Anda</div>' : ''}`;
+  }
+  // Saran umum berdasarkan kategori IMT Kemenkes + pedoman aktivitas fisik WHO 2020. Bukan diagnosis.
+  function weightAdvice(cat, rate) {
+    const act = '<li><b>Aktivitas fisik</b> (WHO 2020, dewasa 18–64 th): 150–300 menit/minggu intensitas sedang (jalan cepat, bersepeda santai, senam) atau 75–150 menit intensitas berat, ditambah latihan penguat otot (angkat beban ringan, push-up, squat) minimal 2 hari/minggu. Mulai dari sedikit lalu naikkan bertahap; bergerak sedikit tetap lebih baik daripada tidak sama sekali.</li>';
+    if (cat.key === 'normal') return `<ul>${act}<li>Pertahankan: makan beragam (sayur, buah, protein, biji-bijian), cukup tidur, dan timbang rutin untuk memantau tren, bukan angka harian.</li></ul>`;
+    if (cat.key === 'gemuk' || cat.key === 'obesitas') return `<ul>${act}<li><b>Target turun</b>: pelan dan stabil sekitar 0,5–1 kg per minggu (bukan lebih cepat). Fokus pada porsi, kurangi minuman manis, gorengan, dan makanan olahan; perbanyak sayur, buah, dan protein.</li><li>Timbang di waktu yang sama (mis. pagi setelah buang air); lihat tren mingguan, naik-turun harian itu wajar.</li>${cat.key === 'obesitas' ? '<li><b>Disarankan konsultasi ke dokter/puskesmas atau ahli gizi</b> untuk rencana yang aman, terutama bila ada diabetes, hipertensi, sakit sendi, atau Anda sedang hamil/menyusui.</li>' : ''}</ul>`;
+    return `<ul><li>IMT di bawah normal. <b>Disarankan periksa ke dokter atau ahli gizi</b> untuk memastikan penyebabnya (pola makan, penyakit, stres).</li><li>Tambah asupan bergizi bertahap: porsi kecil tapi sering, sumber protein (telur, ikan, tempe, tahu, daging), dan karbohidrat kompleks.</li>${act.replace('Aktivitas fisik', 'Latihan penguat otot membantu menambah massa otot; aktivitas fisik')}</ul>`;
+  }
+  const WT_SRC = '<details class="hlp"><summary>📚 Sumber & catatan</summary><div class="hb"><ul><li>Klasifikasi IMT Indonesia: Kemenkes RI (P2PTM, 2018): &lt;17 sangat kurus, 17–18,4 kurus, 18,5–25 normal, 25,1–27 gemuk, &gt;27 obesitas. Lingkar perut berisiko: pria ≥ 90 cm, wanita ≥ 80 cm.</li><li>Aktivitas fisik: WHO Guidelines on Physical Activity and Sedentary Behaviour (2020).</li><li>Batas WHO global memakai &ge;25 (overweight) dan &ge;30 (obesitas); untuk populasi Asia-Pasifik WHO/IASO/IOTF memakai &ge;23 sebagai berisiko dan &ge;25 sebagai obesitas I, sehingga hasil bisa sedikit berbeda antar acuan.</li><li>IMT hanya untuk dewasa ≥ 18 th. Tidak membedakan otot dan lemak (atlet, lansia, ibu hamil bisa tidak tepat). Anak/remaja dinilai dengan kurva pertumbuhan (posyandu/dokter).</li><li><b>Ini informasi umum, bukan diagnosis.</b> Konsultasikan ke tenaga kesehatan sebelum mengubah pola makan/olahraga secara drastis.</li></ul></div></details>';
+  function weightPage() {
+    const p = profile(), t = C.today(), logs = list('wt'), ser = C.weightSeries(logs), last = ser[ser.length - 1];
+    const age = p.birth ? C.ageOn(p.birth, t) : null, ready = p.sex && p.height;
+    let h = '';
+    if (!ready) h += '<div class="card pad" data-a="profilEdit" style="cursor:pointer"><div class="t">📏 Lengkapi profil dulu</div><div class="s">Isi jenis kelamin dan tinggi badan (dan tanggal lahir) di Profil saya agar IMT dihitung. Ketuk di sini.</div></div>';
+    if (age != null && age < 18) h += '<div class="card pad"><div class="t">👶 Di bawah 18 tahun</div><div class="s">IMT dewasa tidak cocok untuk anak/remaja. Gunakan kurva pertumbuhan di buku KIA/posyandu atau tanyakan ke dokter. Grafik berat tetap bisa dicatat.</div></div>';
+    const hr = p.height ? C.healthyRange(p.height) : null;
+    if (last && p.height && (age == null || age >= 18)) {
+      const b = C.bmi(last.kg, p.height), cat = C.bmiCategory(b), rate = C.weeklyRate(ser, t, 28);
+      const lw = logs.filter((x) => x.waist).sort((a, c) => C.cmp(c.date, a.date))[0], wr = lw ? C.waistRisk(p.sex, lw.waist) : null;
+      h += `<div class="card hero pad"><div class="s">IMT terakhir (${fmtDate(last.date)})</div><div class="big">${String(b).replace('.', ',')} · ${esc(cat.label)}</div><div class="s">Berat ${fmtKg(last.kg)} kg · tinggi ${esc(p.height)} cm${hr ? ' · rentang normal ' + fmtKg(hr.min) + '–' + fmtKg(hr.max) + ' kg' : ''}</div>${rate != null ? `<div class="s">Tren 4 minggu: ${rate > 0 ? '+' : ''}${fmtKg(rate)} kg/minggu</div>` : ''}${wr != null ? `<div class="s">Lingkar perut ${fmtKg(lw.waist)} cm: ${wr ? '⚠️ di atas batas berisiko (obesitas sentral)' : '✓ di bawah batas berisiko'}</div>` : ''}</div>`;
+      if (rate != null && cat.key !== 'kurus' && cat.key !== 'sangat-kurus' && Math.abs(rate) > 1) h += '<div class="card pad"><div class="t">⚠️ Perubahan terlalu cepat</div><div class="s">Berat berubah lebih dari 1 kg per minggu. Bila tidak disengaja, periksakan ke dokter; bila sengaja, perlambat agar aman.</div></div>';
+      h += `<h2>Saran untuk Anda</h2><div class="card pad hlpl">${weightAdvice(cat, rate)}</div>`;
+    }
+    h += `<h2>Grafik</h2><div class="card pad">${weightChart(ser, hr)}</div>`;
+    h += '<button class="btn full" data-a="wtAdd">+ Catat berat hari ini</button><div style="height:10px"></div>';
+    h += `<h2>Riwayat</h2><div class="card">${ser.length ? logs.slice().sort((a, c) => C.cmp(c.date, a.date)).slice(0, 60).map((x) => `<div class="row" data-a="wtEdit" data-id="${x.id}" style="cursor:pointer"><div class="grow"><div class="t">${fmtKg(x.kg)} kg</div><div class="s">${fmtDate(x.date)}${x.waist ? ' · perut ' + fmtKg(x.waist) + ' cm' : ''}${p.height ? ' · IMT ' + String(C.bmi(x.kg, p.height)).replace('.', ',') : ''}</div></div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada catatan.<br>Timbang pagi hari, lalu catat di sini.</div>'}</div>`;
+    return { title: 'Berat badan', sub: ser.length + ' catatan', html: h + WT_SRC, add: () => wtForm() };
   }
 
   // --- rutinitas ---
@@ -531,9 +628,9 @@
     }, extras, 'Pengingat otomatis berhenti bila target hari ini tercapai atau Anda sudah sesuai laju.');
   }
   function rtTemplateForm() {
-    openForm('Pilih rutinitas', RT_TEMPLATES.map((t, i) => ({ k: 't' + i, label: t.emoji + ' ' + t.name + ' · ' + t.target + ' ' + t.unit, type: 'check' })), {}, (v) => {
+    openForm('Pilih rutinitas', RT_TEMPLATES.map((t, i) => ({ k: 't' + i, label: '[' + t.g + '] ' + t.emoji + ' ' + t.name + ' · ' + t.from + (t.everyMin ? '–' + t.to + ' tiap ' + (t.everyMin >= 60 ? t.everyMin / 60 + ' jam' : t.everyMin + ' mnt') : '') , type: 'check' })), {}, (v) => {
       let n = 0;
-      RT_TEMPLATES.forEach((t, i) => { if (v['t' + i]) { n++; C.put(store, 'rt', Object.assign({}, t)); } });
+      RT_TEMPLATES.forEach((t, i) => { if (v['t' + i]) { n++; const o = Object.assign({}, t); delete o.g; C.put(store, 'rt', o); } });
       if (!n) return 'Centang minimal satu.';
       commit(); toast(n + ' rutinitas ditambahkan');
     });
@@ -692,6 +789,7 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
+const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE</div><div class="s">Dibuat oleh <b>Illusix</b>. Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
     const log = x.log || [], on = log.includes(t);
@@ -710,7 +808,7 @@
   const planInterval = (p) => [p.every > 0 ? C.intervalLabel(p) : '', p.kmEvery > 0 ? 'tiap ' + num(p.kmEvery) + ' km' : ''].filter(Boolean).join(' / ');
   function planCard(p, showVeh) {
     const st = planStatus(p), g = GROUPS[p.group] || GROUPS.rumah, v = p.vehicleId ? get('veh', p.vehicleId) : null;
-    return `<div class="card pc ${st.lvl === 'late' ? 'late' : ''}"><div class="pt" data-a="planOpen" data-id="${p.id}" style="cursor:pointer">${ic(g[2], g[1])}<div class="grow"><div class="t">${esc(p.name)}</div><div class="s">rutin ${esc(planInterval(p))}${showVeh && v ? ' · ' + esc(v.name) : ''}${p.lastDone ? ' · terakhir ' + fmtDate(p.lastDone) : ''}</div></div></div><div class="pa"><span class="bd ${st.lvl === 'ok' ? '' : st.lvl}">${esc(st.text)}</span><button class="btn sm" data-a="planDone" data-id="${p.id}">✓ Selesai</button></div></div>`;
+    return `<div class="card pc ${st.lvl === 'late' ? 'late' : ''}"><div class="pt" data-a="planOpen" data-id="${p.id}" style="cursor:pointer">${ic(g[2], g[1])}<div class="grow"><div class="t">${esc(p.name)}</div><div class="s">rutin ${esc(planInterval(p))}${showVeh && v ? ' · ' + esc(v.name) : ''}${p.lastDone ? ' · terakhir ' + fmtDate(p.lastDone) : ''}</div></div></div><div class="pa"><span class="bd ${st.lvl === 'ok' ? '' : st.lvl}">${esc(st.text)}</span><span class="inl" style="gap:8px"><button class="btn alt sm" data-a="planEdit" data-id="${p.id}" aria-label="Ubah jadwal ${esc(p.name)}">✎ Ubah</button><button class="btn sm" data-a="planDone" data-id="${p.id}">✓ Selesai</button></span></div></div>`;
   }
   const planSort = (a, b) => C.cmp(a.nextDue || '9999', b.nextDue || '9999');
 
@@ -864,10 +962,10 @@
       mrow('c4', '🚗', 'Kendaraan', 'Pajak, STNK, odometer, servis', 'kendaraan'), mrow('c1', '🛡️', 'Aset & garansi', 'Barang berharga dan masa garansi', 'aset'),
       mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
       mrow('c4', '📄', 'Dokumen penting', 'Lokasi simpan & masa berlaku', 'dokumen')])
-      + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian')])
+      + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
       + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
       + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
-    return { title: 'Lainnya', sub: '', html: h };
+    return { title: 'Lainnya', sub: '', html: h + ABOUT_HTML };
   }
 
   // ---------- subhalaman ----------
@@ -895,7 +993,7 @@
       let h = '';
       vs.forEach((v) => {
         const plans = list('plan').filter((p) => p.vehicleId === v.id).sort(planSort);
-        h += `<div class="card pad"><div style="display:flex;gap:12px;align-items:center" data-a="vehEdit" data-id="${v.id}">${ic('c4', v.kind === 'mobil' ? '🚗' : v.kind === 'motor' ? '🛵' : '🚙')}<div class="grow"><div class="t">${esc(v.name)}</div><div class="s">${v.plate ? esc(v.plate) + ' · ' : ''}${v.odometer !== '' && v.odometer != null ? num(v.odometer) + ' km' : 'odometer belum diisi'}</div></div><span class="chev">✎</span></div>
+        h += `<div class="card pad"><div style="display:flex;gap:12px;align-items:center" data-a="vehEdit" data-id="${v.id}">${ic('c4', /^mobil/.test(v.kind) ? '🚗' : /^motor/.test(v.kind) ? '🛵' : '🚙')}<div class="grow"><div class="t">${esc(v.name)}${/_ev$/.test(v.kind || '') ? ' <span class="bd">⚡ EV</span>' : ''}</div><div class="s">${v.plate ? esc(v.plate) + ' · ' : ''}${v.odometer !== '' && v.odometer != null ? num(v.odometer) + ' km' : 'odometer belum diisi'}</div></div><span class="chev">✎</span></div>
         ${v.pajakDue ? `<div class="kv"><span>Pajak tahunan</span><span>${fmtDate(v.pajakDue)} ${badge(v.pajakDue)}</span></div>` : ''}${v.stnkDue ? `<div class="kv"><span>STNK 5 tahunan</span><span>${fmtDate(v.stnkDue)} ${badge(v.stnkDue)}</span></div>` : ''}
         <div class="btns" style="margin-top:10px"><button class="btn alt sm" data-a="odoUpd" data-id="${v.id}">Update odometer</button><button class="btn alt sm" data-a="vehPlan" data-id="${v.id}">+ Perawatan</button><button class="btn alt sm" data-a="vehTpl" data-id="${v.id}">✨ Template</button></div></div>`;
         h += plans.length ? plans.map((p) => planCard(p)).join('') : '<p class="note">Belum ada rencana servis untuk kendaraan ini. Coba "Template" (ganti oli, servis berkala).</p>';
@@ -969,9 +1067,10 @@
       h += `<h2>Riwayat notifikasi</h2><div class="card">${log.length ? log.map((x) => `<div class="row"><div class="grow"><div class="t" style="font-weight:600">${esc(x.body)}</div><div class="s">${esc(new Date(x.t).toLocaleString('id-ID'))}</div></div></div>`).join('') : '<div class="empty">Belum ada notifikasi yang berbunyi.</div>'}</div>`;
       return { title: 'Notifikasi', sub: '', html: h };
     },
+    berat() { return weightPage(); },
     profil() {
       const p = profile();
-      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Tanggal lahir</span><b>${p.birth ? fmtDate(p.birth) : '—'}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
+      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Tanggal lahir</span><b>${p.birth ? fmtDate(p.birth) : '—'}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div class="kv"><span>Jenis kelamin · tinggi</span><b>${p.sex ? (p.sex === 'L' ? 'Laki-laki' : 'Perempuan') : '—'} · ${p.height ? esc(p.height) + ' cm' : '—'}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
     },
     keluarga() {
       const ps = list('person').sort((a, b) => C.cmp(a.name, b.name)), t = C.today();
@@ -1032,7 +1131,9 @@
         + D('👪 Dipakai bersama / dites orang lain', '<p>Bagikan alamat aplikasi. <b>Setiap orang mendapat aplikasi kosong dan datanya terpisah di HP masing-masing</b>; tidak ada data yang bercampur dan tidak ada server pusat.</p><p>Untuk sinkron Drive, orang lain memakai Client ID mereka sendiri (langkah di atas), atau Anda menambahkan email mereka sebagai <b>Test users</b> di project Anda. Untuk berbagi data keluarga yang sama antar HP, pakai satu akun Google yang sama atau ekspor/impor JSON.</p><button class="btn alt" data-a="shareApp">Bagikan alamat aplikasi</button><p class="s">' + esc(url) + '</p>')
         + D('🧪 Data contoh', `<p class="s">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja. Yang belum Anda ubah bisa dihapus sekaligus; yang sudah Anda edit otomatis menjadi milik Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}`)
         + D('🔒 Privasi & keamanan', '<p>Data ada di perangkat Anda (dan folder privat Drive Anda bila terhubung). Tidak ada server pengembang. Nomor KTP/NPWP disimpan <b>belum terenkripsi</b>: pakai kunci layar HP yang kuat. Foto berkas hanya di perangkat itu. Backup rutin: <b>Sinkron &amp; backup → Ekspor JSON</b>.</p><p class="s">Aturan: uang = rupiah bulat; transaksi tidak dihapus, hanya di-void; transfer bukan pemasukan/pengeluaran.</p>')
-        + '<p class="note">RUMAHKU-ONE Lite v0.3</p>' };
+        + D('⚖️ Berat badan & IMT', '<p>Isi jenis kelamin &amp; tinggi badan di <b>Profil saya</b>, lalu <b>Lainnya → Berat badan &amp; IMT → Catat</b>. Grafik dan saran muncul otomatis. Klasifikasi mengikuti Kemenkes RI dan saran olahraga mengikuti WHO. Hanya untuk dewasa; ini bukan diagnosis.</p>')
+        + D('ℹ️ Tentang aplikasi', '<p>RUMAHKU-ONE dibuat oleh <b>Illusix</b>. Gratis dan <b>dilarang diperjualbelikan</b>. Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a>.</p>', false)
+        + '<p class="note">RUMAHKU-ONE Lite v0.4 · oleh Illusix</p>' };
     },
   };
 
@@ -1137,6 +1238,7 @@
     demoOn() { demoOn(); }, demoOff() { demoOff(); },
     shareApp() { const u = location.origin + location.pathname.replace(/index\.html$/, ''); if (navigator.share) navigator.share({ title: 'RUMAHKU-ONE', url: u }).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => toast('Alamat disalin'), () => toast(u)); else toast(u); },
     tpl(d) { if (tplForms[d.k]) tplForms[d.k](); },
+    wtAdd() { wtForm(); }, wtEdit(d) { wtForm(get('wt', d.id)); },
     rtAdd() { routineForm(); }, rtTpl() { rtTemplateForm(); }, rtEdit(d) { routineForm(get('rt', d.id)); },
     rtInc(d) { rtBump(d.id, 1); }, rtDec(d) { rtBump(d.id, -1); },
     profilEdit() { profilForm(); },

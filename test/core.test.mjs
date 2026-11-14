@@ -260,3 +260,18 @@ test('calendarItems: ulang tahun (anggota & profil), tagihan, perawatan, pajak, 
   assert.equal(feb.filter((x) => x.kind === 'birthday')[0].date, '2027-02-28', '29 Feb -> 28 Feb di tahun biasa');
   assert.equal(C.calendarItems(st, '2026-12-01', '2026-12-02').length, 0 + C.calendarItems(st, '2026-12-01', '2026-12-02').filter((x) => x.kind === 'bill').length);
 });
+test('IMT & kategori Kemenkes RI', () => {
+  assert.equal(C.bmi(58, 158), 23.2); assert.equal(C.bmi(0, 170), null); assert.equal(C.bmi(70, 0), null);
+  const k = (b) => C.bmiCategory(b).key;
+  assert.equal(k(16.9), 'sangat-kurus'); assert.equal(k(17), 'kurus'); assert.equal(k(18.4), 'kurus');
+  assert.equal(k(18.5), 'normal'); assert.equal(k(25), 'normal'); assert.equal(k(25.1), 'gemuk'); assert.equal(k(27), 'gemuk');
+  assert.equal(k(27.1), 'obesitas'); assert.equal(C.bmiCategory(null), null);
+});
+test('rentang berat normal, lingkar perut, deret & laju berat', () => {
+  assert.deepEqual(C.healthyRange(170), { min: 53.5, max: 72.3 });
+  assert.equal(C.waistRisk('L', 90), true); assert.equal(C.waistRisk('L', 89), false); assert.equal(C.waistRisk('P', 80), true); assert.equal(C.waistRisk('P', 79.9), false); assert.equal(C.waistRisk('', 100), null);
+  const ser = C.weightSeries([{ date: '2026-11-02', kg: 80 }, { date: '2026-11-01', kg: 81 }, { date: '2026-11-02', kg: 79.5 }, { date: '2026-11-03', kg: 0 }]);
+  assert.deepEqual(ser, [{ date: '2026-11-01', kg: 81 }, { date: '2026-11-02', kg: 79.5 }]);
+  const pts = []; for (let i = 0; i < 8; i++) pts.push({ date: C.addDays('2026-11-01', i), kg: 90 - i * 0.1 }); // turun 0.1 kg/hari = 0.7 kg/minggu
+  assert.equal(C.weeklyRate(pts, '2026-11-08', 14), -0.7); assert.equal(C.weeklyRate(pts.slice(0, 2), '2026-11-08', 14), null);
+});
