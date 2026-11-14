@@ -112,3 +112,70 @@ test('validStore menolak bentuk salah (impor backup)', () => {
   assert.equal(C.validStore(null), false);
   assert.equal(C.validStore({ v: 1, rec: [] }), false);
 });
+
+// ---------- Rumah ----------
+test('countdown & urgency', () => {
+  assert.equal(C.daysBetween('2026-11-14', '2027-02-16'), 94);
+  assert.equal(C.countdown(94), '3 bulan lagi');
+  assert.equal(C.countdown(40), '40 hari lagi');
+  assert.equal(C.countdown(1), 'Besok');
+  assert.equal(C.countdown(0), 'Hari ini');
+  assert.equal(C.countdown(-3), 'Terlambat 3 hari');
+  assert.equal(C.urgency(-1), 'late'); assert.equal(C.urgency(5), 'soon'); assert.equal(C.urgency(30), 'ok');
+});
+test('interval label & jadwal dari tanggal selesai', () => {
+  assert.equal(C.intervalLabel({ every: 12, unit: 'month' }), 'tiap tahun');
+  assert.equal(C.intervalLabel({ every: 3, unit: 'month' }), 'tiap 3 bulan');
+  assert.equal(C.intervalLabel({ every: 24, unit: 'month' }), 'tiap 2 tahun');
+  assert.equal(C.intervalLabel({ every: 14, unit: 'day' }), 'tiap 2 minggu');
+  assert.equal(C.intervalLabel({ every: 10, unit: 'day' }), 'tiap 10 hari');
+  assert.equal(C.planNext({ every: 3, unit: 'month' }, '2026-11-30'), '2027-02-28');
+  assert.equal(C.planNext({ every: 14, unit: 'day' }, '2026-11-14'), '2026-11-28');
+  // terlambat 2 bulan lalu dikerjakan hari ini -> hitung dari hari ini, bukan dari due lama
+  assert.equal(C.completePlan({ every: 6, unit: 'month', nextDue: '2026-09-01' }, '2026-11-14').nextDue, '2027-05-14');
+});
+test('tagihan: periode, tanggal 31, sudah dibayar, menunggak', () => {
+  assert.equal(C.dueInMonth('2026-02', 31), '2026-02-28');
+  const b = { dueDay: 20, paidYM: '2026-10' };
+  assert.equal(C.billNext(b, '2026-11-14'), '2026-11-20');
+  assert.equal(C.billNext({ dueDay: 20, paidYM: '2026-11' }, '2026-11-14'), '2026-12-20');
+  assert.equal(C.billNext({ dueDay: 5, paidYM: '2026-10' }, '2026-11-14'), '2026-11-05'); // lewat & belum bayar -> terlambat
+  assert.equal(C.billNext({ dueDay: 5 }, '2026-11-14'), '2026-11-05');
+  assert.equal(C.billNext({ dueDay: 31, paidYM: '2026-11' }, '2026-11-14'), '2026-12-31');
+});
+test('stok menipis', () => {
+  const r = C.lowStock([{ qty: 1, min: 2 }, { qty: 5, min: 2 }, { qty: 0, min: 0 }, { qty: 2, min: 2 }]);
+  assert.equal(r.length, 2);
+});
+test('homeAttention: urut, ambang, tidak menyertakan yang jauh', () => {
+  const s = C.emptyStore(), T = '2026-11-14';
+  C.put(s, 'plan', { name: 'Servis AC', group: 'rumah', every: 3, unit: 'month', nextDue: '2026-11-10' });
+  C.put(s, 'plan', { name: 'Kuras toren', group: 'rumah', every: 6, unit: 'month', nextDue: '2027-03-01' });
+  C.put(s, 'plan', { name: 'Ganti oli', group: 'kendaraan', every: 2, unit: 'month', nextDue: '2026-11-20' });
+  C.put(s, 'bill', { name: 'Listrik', dueDay: 15, paidYM: '2026-10' });
+  C.put(s, 'bill', { name: 'Internet', dueDay: 10, paidYM: '2026-11' });
+  C.put(s, 'asset', { name: 'Kulkas', warrantyUntil: '2026-12-01' });
+  C.put(s, 'veh', { id: 'v1', name: 'Motor', odometer: 12300, pajakDue: '2026-11-30' });
+  C.put(s, 'plan', { name: 'Ganti oli motor', group: 'kendaraan', vehicleId: 'v1', every: 6, unit: 'month', nextDue: '2027-05-01', nextKm: 12600 });
+  C.put(s, 'plan', { name: 'Servis besar', group: 'kendaraan', vehicleId: 'v1', every: 12, unit: 'month', nextDue: '2027-11-01', nextKm: 20000 });
+  C.put(s, 'doc', { title: 'Polis rumah', expiry: '2027-06-01' });
+  C.put(s, 'inv', { name: 'Gas LPG', qty: 0, min: 1 });
+  const a = C.homeAttention(s, T);
+  const names = a.map((x) => x.text);
+  assert.equal(a[0].text, 'Servis AC'); assert.equal(a[0].level, 'late');
+  assert.ok(names.includes('Tagihan Listrik') && names.includes('Ganti oli'));
+  assert.ok(names.includes('Gas LPG hampir habis'));
+  assert.ok(names.includes('Pajak Motor'));
+  assert.ok(names.includes('Ganti oli motor (Motor) 300 km lagi'));
+  assert.ok(!names.some((n) => n.startsWith('Servis besar')));
+  assert.ok(!names.includes('Kuras toren')); assert.ok(!names.includes('Polis rumah kedaluwarsa'));
+  assert.ok(!names.includes('Tagihan Internet')); // internet baru jatuh tempo Des 10 -> >7 hari
+  for (let i = 1; i < a.length; i++) assert.ok(a[i - 1].n <= a[i].n);
+});
+
+test('kmLeft', () => {
+  assert.equal(C.kmLeft({ nextKm: 12600 }, 12300), 300);
+  assert.equal(C.kmLeft({ nextKm: 12600 }, 12700), -100);
+  assert.equal(C.kmLeft({}, 12300), null);
+  assert.equal(C.kmLeft({ nextKm: 100 }, null), null);
+});

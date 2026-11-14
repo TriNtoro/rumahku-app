@@ -1,4 +1,4 @@
-/* RUMAHKU-ONE Lite — UI. Semua data: penyimpanan lokal + (opsional) file pribadi di Google Drive. */
+/* RUMAHKU-ONE Lite v0.2 — UI. Data: penyimpanan lokal + (opsional) file pribadi di Google Drive. */
 (function () {
   'use strict';
   const C = Core;
@@ -7,34 +7,49 @@
   const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const EXP_CATS = ['Makan', 'Transportasi', 'Belanja', 'Tagihan', 'Rumah', 'Kesehatan', 'Hiburan', 'Pendidikan', 'Lainnya'];
-  const INC_CATS = ['Gaji', 'Bonus', 'Lainnya'];
   const MOODS = ['😞', '🙁', '😐', '🙂', '😄'];
   const REPEATS = [['none', 'Tidak berulang'], ['daily', 'Setiap hari'], ['weekly', 'Setiap minggu'], ['monthly', 'Setiap bulan'], ['yearly', 'Setiap tahun']];
+  const GROUPS = { rumah: ['Rumah', '🏠', 'c2'], kendaraan: ['Kendaraan', '🚗', 'c4'], elektronik: ['Elektronik', '🔌', 'c6'] };
+  const ASSET_EMOJI = { Elektronik: '🔌', Perabot: '🛋️', Bangunan: '🏗️', Lainnya: '📦' };
+  const TEMPLATES = [
+    { g: 'rumah', name: 'Servis AC', every: 3, unit: 'month' }, { g: 'rumah', name: 'Kuras toren/tandon air', every: 6, unit: 'month' },
+    { g: 'rumah', name: 'Bersihkan talang & cek atap', every: 6, unit: 'month' }, { g: 'rumah', name: 'Cek instalasi listrik & MCB', every: 12, unit: 'month' },
+    { g: 'rumah', name: 'Semprot anti rayap/hama', every: 12, unit: 'month' }, { g: 'rumah', name: 'Ganti filter air', every: 3, unit: 'month' },
+    { g: 'rumah', name: 'Kuras septic tank', every: 36, unit: 'month' }, { g: 'rumah', name: 'Cek tabung pemadam & detektor asap', every: 12, unit: 'month' },
+    { g: 'elektronik', name: 'Bersihkan kulkas & cek karet pintu', every: 6, unit: 'month' }, { g: 'elektronik', name: 'Servis mesin cuci', every: 12, unit: 'month' },
+    { g: 'elektronik', name: 'Backup foto & data HP/laptop', every: 3, unit: 'month' },
+  ];
+  const VEH_TEMPLATES = [
+    { name: 'Ganti oli', every: 2, unit: 'month', kmEvery: 2500 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 },
+    { name: 'Cek tekanan & kondisi ban', every: 1, unit: 'month', kmEvery: 0 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 },
+  ];
+  const BILL_NAMES = ['Listrik PLN', 'Internet', 'PDAM / air', 'PBB', 'Iuran RT / sampah', 'Gas', 'Asuransi', 'Cicilan', 'Langganan streaming'];
 
   // ---------- state ----------
   function readJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
   let store = readJSON(LS);
   if (!C.validStore(store)) store = C.emptyStore();
   let cfg = readJSON(CFG) || {};
-  const ui = { tab: 'today', rumah: 'aset', pribadi: 'jurnal', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null };
-  let syncMsg = '';
-  let syncing = false, syncAgain = false, syncTimer = null;
+  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null };
+  let syncMsg = '', syncing = false, syncAgain = false, syncTimer = null, ignorePop = false;
 
   function persist() { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) { toast('Penyimpanan penuh/tidak tersedia: ekspor backup sekarang'); } }
   function saveCfg() { try { localStorage.setItem(CFG, JSON.stringify(cfg)); } catch (e) { /* abaikan */ } }
   function commit() { persist(); scheduleSync(); render(); }
   const list = (t) => C.list(store, t);
+  const get = (type, id) => (store.rec[id] && !store.rec[id]._d && store.rec[id]._t === type ? store.rec[id] : null);
   const nowYM = () => C.today().slice(0, 7);
 
   // ---------- util tampilan ----------
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = (n) => String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   function fmtDate(s) {
     if (!s) return '';
     const d = C.parseD(s);
     return DAYS[d.getDay()].slice(0, 3) + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3) + ' ' + d.getFullYear();
   }
-  function ymLabel(ym) { const [y, m] = ym.split('-'); return MONTHS[+m - 1] + ' ' + y; }
-  function ymShift(ym, n) { return C.addMonths(ym + '-01', n, 1).slice(0, 7); }
+  const ymLabel = (ym) => MONTHS[+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4);
+  const ymShift = (ym, n) => C.addMonths(ym + '-01', n, 1).slice(0, 7);
   function toast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg; t.style.display = 'block';
@@ -42,6 +57,11 @@
   }
   const rp = (n) => C.fmtIDR(n);
   const sgn = (n) => (n < 0 ? 'neg' : '');
+  const ic = (cls, em) => `<span class="ic ${cls || ''}" aria-hidden="true">${em}</span>`;
+  function badge(date) {
+    const n = C.daysBetween(C.today(), date);
+    return `<span class="bd ${C.urgency(n, 7) === 'ok' ? '' : C.urgency(n, 7)}">${C.countdown(n)}</span>`;
+  }
 
   // ---------- dialog & form ----------
   const dlg = document.getElementById('dlg');
@@ -58,9 +78,9 @@
     return `<label class="f">${esc(f.label)}${f.req ? ' *' : ''}${inner}</label>`;
   }
   // fields: [{k,label,type,req,opts,list}], onOk(values) -> pesan error (string) atau undefined
-  function openForm(title, fields, init, onOk, extras) {
+  function openForm(title, fields, init, onOk, extras, note) {
     init = init || {};
-    dlg.innerHTML = `<form method="dialog" novalidate><h3>${esc(title)}</h3>${fields.map((f) => fieldHTML(f, init[f.k])).join('')}<div class="err" id="ferr"></div><div class="btns"><button type="button" class="btn alt" id="fcancel">Batal</button><button class="btn" id="fok" type="submit">Simpan</button></div>${(extras || []).length ? `<div class="btns">${extras.map((x, i) => `<button type="button" class="btn bad sm" data-x="${i}">${esc(x.label)}</button>`).join('')}</div>` : ''}</form>`;
+    dlg.innerHTML = `<form method="dialog" novalidate><h3>${esc(title)}</h3>${note ? `<p class="note" style="margin:0">${esc(note)}</p>` : ''}${fields.map((f) => fieldHTML(f, init[f.k])).join('')}<div class="err" id="ferr"></div><div class="btns"><button type="button" class="btn alt" id="fcancel">Batal</button><button class="btn" id="fok" type="submit">Simpan</button></div>${(extras || []).length ? `<div class="btns">${extras.map((x, i) => `<button type="button" class="btn bad sm" data-x="${i}">${esc(x.label)}</button>`).join('')}</div>` : ''}</form>`;
     const form = dlg.querySelector('form');
     form.addEventListener('click', (e) => {
       if (e.target.id === 'fcancel') closeDlg();
@@ -90,20 +110,17 @@
     });
     dlg.showModal();
   }
-  function confirmBox(msg, yes) {
-    openMenu(msg, [{ label: 'Ya, lanjutkan', fn: yes }]);
-  }
+  const confirmBox = (msg, yes) => openMenu(msg, [{ label: 'Ya, lanjutkan', fn: yes }]);
+  const accOpts = () => list('acc').map((a) => [a.id, a.name]);
 
   // ---------- form per modul ----------
   function taskForm(t) {
     t = t || {};
     openForm(t.id ? 'Ubah tugas' : 'Tugas baru', [
-      { k: 'title', label: 'Judul', req: true },
-      { k: 'due', label: 'Tenggat', type: 'date' },
+      { k: 'title', label: 'Judul', req: true }, { k: 'due', label: 'Tenggat', type: 'date' },
       { k: 'repeat', label: 'Pengulangan', type: 'select', opts: REPEATS },
       { k: 'prio', label: 'Prioritas', type: 'select', opts: [['0', 'Biasa'], ['1', 'Penting']] },
-      { k: 'label', label: 'Label / proyek' },
-      { k: 'notes', label: 'Catatan', type: 'textarea' },
+      { k: 'label', label: 'Label / proyek' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
     ], { title: t.title, due: t.due || '', repeat: t.repeat || 'none', prio: t.prio || '0', label: t.label, notes: t.notes }, (v) => {
       if (v.repeat !== 'none' && !v.due) return 'Tugas berulang perlu tenggat.';
       C.put(store, 'task', { id: t.id, title: v.title, due: v.due || '', repeat: v.repeat, prio: v.prio, label: v.label, notes: v.notes, anchorDay: v.due ? C.parseD(v.due).getDate() : undefined, done: t.done || false, doneLog: t.doneLog });
@@ -118,36 +135,28 @@
       extras.push({ label: 'Hapus acara', fn: () => { C.remove(store, ev.id); commit(); } });
     }
     openForm(ev.id ? 'Ubah acara' : 'Acara baru', [
-      { k: 'title', label: 'Judul', req: true },
-      { k: 'date', label: 'Tanggal', type: 'date', req: true },
-      { k: 'allDay', label: 'Sepanjang hari', type: 'check' },
-      { k: 'time', label: 'Jam mulai', type: 'time' },
-      { k: 'repeat', label: 'Pengulangan', type: 'select', opts: REPEATS },
-      { k: 'until', label: 'Berulang sampai (opsional)', type: 'date' },
+      { k: 'title', label: 'Judul', req: true }, { k: 'date', label: 'Tanggal', type: 'date', req: true },
+      { k: 'allDay', label: 'Sepanjang hari', type: 'check' }, { k: 'time', label: 'Jam mulai', type: 'time' },
+      { k: 'repeat', label: 'Pengulangan', type: 'select', opts: REPEATS }, { k: 'until', label: 'Berulang sampai (opsional)', type: 'date' },
       { k: 'notes', label: 'Catatan', type: 'textarea' },
     ], { title: ev.title, date: ev.date || ui.calSel || C.today(), allDay: ev.allDay !== false && !ev.time, time: ev.time, repeat: ev.repeat || 'none', until: ev.until, notes: ev.notes }, (v) => {
       C.put(store, 'event', { id: ev.id, title: v.title, date: v.date, allDay: v.allDay, time: v.allDay ? '' : v.time, repeat: v.repeat, until: v.until || '', notes: v.notes, skip: ev.skip });
       commit();
     }, extras);
   }
-  function accOpts() { return list('acc').map((a) => [a.id, a.name]); }
-  function txForm(kind) {
+  function txForm(kind, pre) {
     if (!list('acc').length) { toast('Buat akun dulu (mis. Dompet)'); return accForm(); }
+    pre = pre || {};
     const opts = accOpts();
     openForm('Catat transaksi', [
       { k: 'kind', label: 'Jenis', type: 'select', opts: [['expense', 'Pengeluaran'], ['income', 'Pemasukan'], ['transfer', 'Transfer antar akun']] },
-      { k: 'amount', label: 'Jumlah (Rp)', type: 'amount', req: true },
-      { k: 'acc', label: 'Akun', type: 'select', opts },
+      { k: 'amount', label: 'Jumlah (Rp)', type: 'amount', req: true }, { k: 'acc', label: 'Akun', type: 'select', opts },
       { k: 'to', label: 'Ke akun (hanya transfer)', type: 'select', opts: [['', '—']].concat(opts) },
-      { k: 'cat', label: 'Kategori', list: EXP_CATS.concat(['Gaji', 'Bonus']) },
-      { k: 'date', label: 'Tanggal', type: 'date', req: true },
-      { k: 'note', label: 'Catatan' },
-    ], { kind: kind || 'expense', date: C.today(), acc: opts[0][0] }, (v) => {
+      { k: 'cat', label: 'Kategori', list: EXP_CATS.concat(['Gaji', 'Bonus']) }, { k: 'date', label: 'Tanggal', type: 'date', req: true }, { k: 'note', label: 'Catatan' },
+    ], { kind: kind || 'expense', date: C.today(), acc: opts[0][0], amount: pre.amount, cat: pre.cat, note: pre.note }, (v) => {
       const amount = C.parseAmount(v.amount);
       if (amount == null || amount <= 0) return 'Jumlah harus bilangan bulat rupiah lebih dari 0 (tanpa desimal).';
-      if (v.kind === 'transfer') {
-        if (!v.to || v.to === v.acc) return 'Transfer perlu akun tujuan yang berbeda.';
-      }
+      if (v.kind === 'transfer' && (!v.to || v.to === v.acc)) return 'Transfer perlu akun tujuan yang berbeda.';
       C.put(store, 'tx', { kind: v.kind, amount, acc: v.acc, to: v.kind === 'transfer' ? v.to : '', cat: v.kind === 'transfer' ? '' : (v.cat || 'Lainnya'), date: v.date, note: v.note, cid: C.uid() });
       commit(); toast('Tercatat: ' + rp(amount));
     });
@@ -161,10 +170,9 @@
     ], { name: a.name, type: a.type || 'kas', opening: a.opening || '' }, (v) => {
       let neg = false, raw = v.opening;
       if (raw.startsWith('-')) { neg = true; raw = raw.slice(1); }
-      let n = raw === '' ? 0 : C.parseAmount(raw);
+      const n = raw === '' ? 0 : C.parseAmount(raw);
       if (n == null) return 'Saldo awal harus bilangan bulat rupiah.';
-      C.put(store, 'acc', { id: a.id, name: v.name, type: v.type, opening: neg ? -n : n });
-      commit();
+      C.put(store, 'acc', { id: a.id, name: v.name, type: v.type, opening: neg ? -n : n }); commit();
     }, a.id ? [{ label: 'Hapus akun', fn: () => {
       if (list('tx').some((t) => t.acc === a.id || t.to === a.id)) { toast('Akun punya transaksi; tidak bisa dihapus'); return false; }
       C.remove(store, a.id); commit();
@@ -173,47 +181,169 @@
   function budgetForm(b) {
     b = b || {};
     openForm(b.id ? 'Ubah anggaran' : 'Anggaran bulanan', [
-      { k: 'cat', label: 'Kategori pengeluaran', req: true, list: EXP_CATS },
-      { k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true },
+      { k: 'cat', label: 'Kategori pengeluaran', req: true, list: EXP_CATS }, { k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true },
     ], { cat: b.cat, limit: b.limit || '' }, (v) => {
       const n = C.parseAmount(v.limit); if (n == null || n <= 0) return 'Batas harus bilangan bulat rupiah > 0.';
       C.put(store, 'budget', { id: b.id, cat: v.cat, limit: n }); commit();
     }, b.id ? [{ label: 'Hapus anggaran', fn: () => { C.remove(store, b.id); commit(); } }] : null);
   }
+  // --- Rumah: perawatan ---
+  function planForm(p, pre) {
+    p = Object.assign({}, pre || {}, p || {});
+    const assets = [['', '— tanpa —']].concat(list('asset').map((a) => [a.id, a.name]));
+    const vehs = [['', '— tanpa —']].concat(list('veh').map((v) => [v.id, v.name]));
+    const every = p.every || '', unit = p.unit || 'month';
+    openForm(p.id ? 'Ubah rencana perawatan' : 'Rencana perawatan baru', [
+      { k: 'name', label: 'Nama perawatan', req: true },
+      { k: 'group', label: 'Kelompok', type: 'select', opts: Object.keys(GROUPS).map((k) => [k, GROUPS[k][0]]) },
+      { k: 'every', label: 'Ulangi setiap … (angka)', type: 'number' },
+      { k: 'unit', label: 'Satuan', type: 'select', opts: [['month', 'bulan'], ['day', 'hari']] },
+      { k: 'nextDue', label: 'Jatuh tempo berikutnya (kosong = hari ini + interval)', type: 'date' },
+      { k: 'vehicleId', label: 'Kendaraan (opsional)', type: 'select', opts: vehs },
+      { k: 'kmEvery', label: 'Atau tiap … km (khusus kendaraan)', type: 'number' },
+      { k: 'nextKm', label: 'Pada odometer … km berikutnya (opsional)', type: 'number' },
+      { k: 'assetId', label: 'Aset terkait (opsional)', type: 'select', opts: assets },
+      { k: 'cost', label: 'Perkiraan biaya (Rp, opsional)', type: 'amount' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
+    ], { name: p.name, group: p.group || (p.vehicleId ? 'kendaraan' : 'rumah'), every, unit, nextDue: p.nextDue || (every ? C.planNext({ every, unit }, C.today()) : ''), vehicleId: p.vehicleId || '', kmEvery: p.kmEvery || '', nextKm: p.nextKm || '', assetId: p.assetId || '', cost: p.cost || '', notes: p.notes }, (v) => {
+      const ev = v.every === '' ? 0 : +v.every, km = v.kmEvery === '' ? 0 : +v.kmEvery;
+      if (!(ev > 0) && !(km > 0)) return 'Isi interval waktu (bulan/hari) dan/atau interval kilometer.';
+      if (ev > 600 || km > 1000000) return 'Interval terlalu besar.';
+      if (ev > 0 && !v.nextDue) v.nextDue = C.planNext({ every: ev, unit: v.unit }, C.today()); // otomatis: hari ini + interval
+      if (km > 0 && !v.vehicleId) return 'Interval km butuh kendaraan (tambahkan di halaman Kendaraan).';
+      const cost = v.cost === '' ? 0 : C.parseAmount(v.cost);
+      if (cost == null) return 'Biaya harus bilangan bulat rupiah.';
+      let nextKm = v.nextKm === '' ? 0 : +v.nextKm;
+      const veh = v.vehicleId ? get('veh', v.vehicleId) : null;
+      if (km > 0 && !nextKm && veh && veh.odometer) nextKm = +veh.odometer + km;
+      C.put(store, 'plan', { id: p.id, name: v.name, group: v.group, every: ev, unit: v.unit, nextDue: ev > 0 ? v.nextDue : '', vehicleId: v.vehicleId, kmEvery: km, nextKm, assetId: v.assetId, cost, notes: v.notes, lastDone: p.lastDone });
+      commit();
+    }, p.id ? [{ label: 'Hapus rencana', fn: () => { C.remove(store, p.id); ui.stack = ui.stack.filter((x) => !(x.n === 'planDetail' && x.p.id === p.id)); commit(); } }] : null);
+  }
+  function planDoneForm(p) {
+    const veh = p.vehicleId ? get('veh', p.vehicleId) : null;
+    const fields = [{ k: 'date', label: 'Tanggal dikerjakan', type: 'date', req: true }];
+    if (veh) fields.push({ k: 'odo', label: 'Odometer saat ini (km)', type: 'number' });
+    fields.push({ k: 'cost', label: 'Biaya (Rp, opsional)', type: 'amount' }, { k: 'note', label: 'Catatan (bengkel/teknisi, dll.)' });
+    if (accOpts().length) fields.push({ k: 'rec', label: 'Catat biaya sebagai pengeluaran', type: 'check' }, { k: 'acc', label: 'Dari akun', type: 'select', opts: accOpts() });
+    openForm('Selesai: ' + p.name, fields, { date: C.today(), odo: veh ? veh.odometer || '' : '', cost: p.cost || '' }, (v) => {
+      const cost = v.cost === '' ? 0 : C.parseAmount(v.cost);
+      if (cost == null) return 'Biaya harus bilangan bulat rupiah.';
+      let odo = null;
+      if (veh && v.odo !== '') {
+        odo = +v.odo;
+        if (veh.odometer && odo < +veh.odometer) return 'Odometer tidak boleh lebih kecil dari catatan sebelumnya (' + num(veh.odometer) + ' km).';
+        C.put(store, 'veh', { id: veh.id, odometer: odo });
+      }
+      const upd = { id: p.id, lastDone: v.date };
+      if (p.every > 0) upd.nextDue = C.planNext(p, v.date);
+      if (p.kmEvery > 0 && odo != null) upd.nextKm = odo + +p.kmEvery;
+      C.put(store, 'plan', upd);
+      C.put(store, 'plog', { planId: p.id, date: v.date, cost, note: v.note, odo: odo == null ? '' : odo });
+      if (v.rec && cost > 0 && v.acc) C.put(store, 'tx', { kind: 'expense', amount: cost, acc: v.acc, to: '', cat: 'Rumah', date: v.date, note: p.name, cid: C.uid() });
+      commit(); toast('Perawatan dicatat ✓');
+    });
+  }
+  function templateForm(vehId) {
+    const tpls = vehId ? VEH_TEMPLATES.map((t) => Object.assign({ g: 'kendaraan' }, t)) : TEMPLATES;
+    openForm('Pilih template', tpls.map((t, i) => ({ k: 't' + i, label: t.name + ' · ' + C.intervalLabel(t) + (t.kmEvery ? ' / ' + num(t.kmEvery) + ' km' : ''), type: 'check' })), {}, (v) => {
+      let n = 0; const today = C.today(); const veh = vehId ? get('veh', vehId) : null;
+      tpls.forEach((t, i) => {
+        if (!v['t' + i]) return;
+        n++;
+        C.put(store, 'plan', { name: t.name, group: t.g, every: t.every, unit: t.unit, nextDue: C.planNext(t, today), vehicleId: vehId || '', kmEvery: t.kmEvery || 0, nextKm: veh && veh.odometer && t.kmEvery ? +veh.odometer + t.kmEvery : 0, cost: 0 });
+      });
+      if (!n) return 'Centang minimal satu.';
+      commit(); toast(n + ' rencana ditambahkan');
+    }, null, 'Jatuh tempo pertama dihitung dari hari ini. Ubah tanggalnya setelah ditambahkan bila perlu.');
+  }
+  // --- Rumah: kendaraan ---
+  function vehForm(v0) {
+    v0 = v0 || {};
+    openForm(v0.id ? 'Ubah kendaraan' : 'Kendaraan baru', [
+      { k: 'name', label: 'Nama (mis. Honda Beat, Avanza)', req: true },
+      { k: 'kind', label: 'Jenis', type: 'select', opts: [['motor', 'Motor'], ['mobil', 'Mobil'], ['lain', 'Lainnya']] },
+      { k: 'plate', label: 'Plat nomor (opsional)' }, { k: 'year', label: 'Tahun', type: 'number' },
+      { k: 'odometer', label: 'Odometer sekarang (km)', type: 'number' },
+      { k: 'pajakDue', label: 'Pajak tahunan jatuh tempo', type: 'date' }, { k: 'stnkDue', label: 'Ganti plat/STNK 5 tahunan', type: 'date' },
+      { k: 'notes', label: 'Catatan', type: 'textarea' },
+    ], { name: v0.name, kind: v0.kind || 'motor', plate: v0.plate, year: v0.year, odometer: v0.odometer, pajakDue: v0.pajakDue, stnkDue: v0.stnkDue, notes: v0.notes }, (v) => {
+      C.put(store, 'veh', { id: v0.id, name: v.name, kind: v.kind, plate: v.plate, year: v.year, odometer: v.odometer === '' ? '' : +v.odometer, pajakDue: v.pajakDue, stnkDue: v.stnkDue, notes: v.notes }); commit();
+    }, v0.id ? [{ label: 'Hapus kendaraan', fn: () => { C.remove(store, v0.id); commit(); } }] : null);
+  }
+  function odoForm(v0) {
+    openForm('Update odometer', [{ k: 'odometer', label: 'Odometer sekarang (km)', type: 'number', req: true }], { odometer: v0.odometer }, (v) => {
+      if (v0.odometer && +v.odometer < +v0.odometer) return 'Tidak boleh lebih kecil dari ' + num(v0.odometer) + ' km.';
+      C.put(store, 'veh', { id: v0.id, odometer: +v.odometer }); commit();
+    });
+  }
+  // --- Rumah: tagihan ---
+  function billForm(b) {
+    b = b || {};
+    openForm(b.id ? 'Ubah tagihan' : 'Tagihan rutin baru', [
+      { k: 'name', label: 'Nama tagihan', req: true, list: BILL_NAMES }, { k: 'amountEst', label: 'Perkiraan nominal (Rp)', type: 'amount' },
+      { k: 'dueDay', label: 'Jatuh tempo tiap tanggal (1–31)', type: 'number', req: true },
+      { k: 'paidThis', label: 'Sudah dibayar bulan ini', type: 'check' }, { k: 'notes', label: 'Catatan (nomor pelanggan tidak disarankan)', type: 'textarea' },
+    ], { name: b.name, amountEst: b.amountEst || '', dueDay: b.dueDay, notes: b.notes }, (v) => {
+      const d = +v.dueDay; if (!(d >= 1 && d <= 31)) return 'Tanggal harus 1–31.';
+      const amt = v.amountEst === '' ? 0 : C.parseAmount(v.amountEst); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
+      C.put(store, 'bill', { id: b.id, name: v.name, amountEst: amt, dueDay: d, notes: v.notes, paidYM: v.paidThis ? nowYM() : b.paidYM, lastPaid: b.lastPaid }); commit();
+    }, b.id ? [{ label: 'Hapus tagihan', fn: () => { C.remove(store, b.id); commit(); } }] : null);
+  }
+  function billPayForm(b) {
+    const accs = [['', 'Jangan catat ke Uang']].concat(accOpts());
+    openForm('Bayar: ' + b.name, [
+      { k: 'date', label: 'Tanggal bayar', type: 'date', req: true }, { k: 'amount', label: 'Nominal (Rp)', type: 'amount' }, { k: 'acc', label: 'Catat ke akun', type: 'select', opts: accs },
+    ], { date: C.today(), amount: b.amountEst || '', acc: accs.length > 1 ? accs[1][0] : '' }, (v) => {
+      const amt = v.amount === '' ? 0 : C.parseAmount(v.amount); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
+      const period = C.billNext(b, C.today()).slice(0, 7);
+      C.put(store, 'bill', { id: b.id, paidYM: period, lastPaid: v.date, lastAmount: amt });
+      if (v.acc && amt > 0) C.put(store, 'tx', { kind: 'expense', amount: amt, acc: v.acc, to: '', cat: 'Tagihan', date: v.date, note: b.name, cid: C.uid() });
+      commit(); toast('Tagihan dibayar ✓');
+    });
+  }
+  // --- Rumah: aset, stok, kontak, dokumen ---
   function assetForm(a) {
     a = a || {};
     openForm(a.id ? 'Ubah aset' : 'Aset baru', [
-      { k: 'name', label: 'Nama aset', req: true },
-      { k: 'cat', label: 'Kategori', type: 'select', opts: ['Elektronik', 'Kendaraan', 'Perabot', 'Bangunan', 'Lainnya'].map((x) => [x, x]) },
-      { k: 'bought', label: 'Tanggal beli', type: 'date' },
-      { k: 'price', label: 'Harga beli (Rp, opsional)', type: 'amount' },
-      { k: 'warrantyUntil', label: 'Garansi sampai', type: 'date' },
-      { k: 'nextService', label: 'Servis/perawatan berikutnya', type: 'date' },
-      { k: 'everyMonths', label: 'Ulangi servis tiap … bulan (opsional)', type: 'number' },
-      { k: 'notes', label: 'Catatan (nomor seri, lokasi nota, dll.)', type: 'textarea' },
-    ], { name: a.name, cat: a.cat || 'Elektronik', bought: a.bought, price: a.price || '', warrantyUntil: a.warrantyUntil, nextService: a.nextService, everyMonths: a.everyMonths, notes: a.notes }, (v) => {
-      const price = v.price === '' ? 0 : C.parseAmount(v.price);
-      if (price == null) return 'Harga harus bilangan bulat rupiah.';
-      C.put(store, 'asset', { id: a.id, name: v.name, cat: v.cat, bought: v.bought, price, warrantyUntil: v.warrantyUntil, nextService: v.nextService, everyMonths: v.everyMonths ? +v.everyMonths : 0, notes: v.notes, lastService: a.lastService });
-      commit();
+      { k: 'name', label: 'Nama aset', req: true }, { k: 'cat', label: 'Kategori', type: 'select', opts: Object.keys(ASSET_EMOJI).map((x) => [x, x]) },
+      { k: 'bought', label: 'Tanggal beli', type: 'date' }, { k: 'price', label: 'Harga beli (Rp, opsional)', type: 'amount' },
+      { k: 'warrantyUntil', label: 'Garansi sampai', type: 'date' }, { k: 'place', label: 'Lokasi di rumah' },
+      { k: 'notes', label: 'Catatan (lokasi nota/kartu garansi, dll.)', type: 'textarea' },
+    ], { name: a.name, cat: a.cat || 'Elektronik', bought: a.bought, price: a.price || '', warrantyUntil: a.warrantyUntil, place: a.place, notes: a.notes }, (v) => {
+      const price = v.price === '' ? 0 : C.parseAmount(v.price); if (price == null) return 'Harga harus bilangan bulat rupiah.';
+      C.put(store, 'asset', { id: a.id, name: v.name, cat: v.cat, bought: v.bought, price, warrantyUntil: v.warrantyUntil, place: v.place, notes: v.notes }); commit();
     }, a.id ? [{ label: 'Hapus aset', fn: () => { C.remove(store, a.id); commit(); } }] : null);
+  }
+  function invForm(i) {
+    i = i || {};
+    openForm(i.id ? 'Ubah stok' : 'Barang stok baru', [
+      { k: 'name', label: 'Nama barang', req: true }, { k: 'qty', label: 'Jumlah sekarang', type: 'number', req: true }, { k: 'unit', label: 'Satuan (pcs, kg, liter…)' },
+      { k: 'min', label: 'Batas minimum (ingatkan bila ≤)', type: 'number' }, { k: 'expiry', label: 'Kedaluwarsa (opsional)', type: 'date' }, { k: 'place', label: 'Lokasi simpan' },
+    ], { name: i.name, qty: i.qty == null ? 1 : i.qty, unit: i.unit || 'pcs', min: i.min || '', expiry: i.expiry, place: i.place }, (v) => {
+      C.put(store, 'inv', { id: i.id, name: v.name, qty: +v.qty, unit: v.unit, min: v.min === '' ? 0 : +v.min, expiry: v.expiry, place: v.place }); commit();
+    }, i.id ? [{ label: 'Hapus barang', fn: () => { C.remove(store, i.id); commit(); } }] : null);
   }
   function contactForm(c) {
     c = c || {};
     openForm(c.id ? 'Ubah kontak' : 'Kontak baru', [
-      { k: 'name', label: 'Nama', req: true },
-      { k: 'role', label: 'Peran (tukang, dokter, RT, …)' },
-      { k: 'phone', label: 'Telepon', type: 'tel' },
-      { k: 'emergency', label: 'Kontak darurat', type: 'check' },
-      { k: 'notes', label: 'Catatan', type: 'textarea' },
+      { k: 'name', label: 'Nama', req: true }, { k: 'role', label: 'Peran (tukang, dokter, RT, …)' }, { k: 'phone', label: 'Telepon', type: 'tel' },
+      { k: 'emergency', label: 'Kontak darurat', type: 'check' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
     ], c, (v) => { C.put(store, 'contact', { id: c.id, name: v.name, role: v.role, phone: v.phone, emergency: v.emergency, notes: v.notes }); commit(); },
     c.id ? [{ label: 'Hapus kontak', fn: () => { C.remove(store, c.id); commit(); } }] : null);
+  }
+  function docForm(d) {
+    d = d || {};
+    openForm(d.id ? 'Ubah dokumen' : 'Dokumen penting', [
+      { k: 'title', label: 'Nama dokumen', req: true, list: ['Sertifikat rumah', 'Polis asuransi', 'Kartu keluarga', 'Paspor', 'SIM', 'Kontrak kerja', 'Perjanjian sewa'] },
+      { k: 'expiry', label: 'Berlaku sampai / kedaluwarsa', type: 'date' }, { k: 'place', label: 'Disimpan di mana (laci, brankas, folder…)' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
+    ], d, (v) => { C.put(store, 'doc', { id: d.id, title: v.title, expiry: v.expiry, place: v.place, notes: v.notes }); commit(); },
+    d.id ? [{ label: 'Hapus dokumen', fn: () => { C.remove(store, d.id); commit(); } }] : null,
+    'Catat lokasi & masa berlaku saja. Jangan simpan nomor KTP/paspor/rekening di sini: data belum dienkripsi ujung-ke-ujung.');
   }
   function journalForm(j) {
     j = j || {};
     openForm(j.id ? 'Ubah jurnal' : 'Jurnal baru', [
-      { k: 'date', label: 'Tanggal', type: 'date', req: true },
-      { k: 'mood', label: 'Suasana hati', type: 'select', opts: MOODS.map((m, i) => [String(i + 1), m + ' ' + (i + 1) + '/5']) },
+      { k: 'date', label: 'Tanggal', type: 'date', req: true }, { k: 'mood', label: 'Suasana hati', type: 'select', opts: MOODS.map((m, i) => [String(i + 1), m + ' ' + (i + 1) + '/5']) },
       { k: 'text', label: 'Tulisan', type: 'textarea', req: true },
     ], { date: j.date || C.today(), mood: j.mood || '3', text: j.text }, (v) => { C.put(store, 'journal', { id: j.id, date: v.date, mood: v.mood, text: v.text }); commit(); },
     j.id ? [{ label: 'Hapus jurnal', fn: () => { C.remove(store, j.id); commit(); } }] : null);
@@ -225,12 +355,11 @@
       h.id ? [{ label: 'Hapus kebiasaan', fn: () => { C.remove(store, h.id); commit(); } }] : null);
   }
 
-  // ---------- tampilan ----------
+  // ---------- komponen tampilan ----------
   const byDue = (a, b) => C.cmp(a.due || '9999', b.due || '9999') || C.cmp(b.prio || '0', a.prio || '0');
   function taskRow(t, today) {
     const late = t.due && t.due < today && !t.done;
-    const rep = t.repeat && t.repeat !== 'none' ? ' ↻' : '';
-    return `<div class="row ${t.done ? 'done' : ''}"><button class="chk ${t.done ? 'on' : ''}" data-a="${t.done ? 'taskUndo' : 'taskDone'}" data-id="${t.id}" aria-label="${t.done ? 'Batalkan selesai' : 'Tandai selesai'}: ${esc(t.title)}">${t.done ? '✓' : ''}</button><div class="grow" data-a="taskEdit" data-id="${t.id}"><div class="t">${t.prio === '1' ? '⭐ ' : ''}${esc(t.title)}${rep}</div><div class="s">${t.due ? (late ? '<span class="neg">Terlambat · </span>' : '') + fmtDate(t.due) : 'Tanpa tenggat'}${t.label ? ' · ' + esc(t.label) : ''}</div></div></div>`;
+    return `<div class="row ${t.done ? 'done' : ''}"><button class="chk ${t.done ? 'on' : ''}" data-a="${t.done ? 'taskUndo' : 'taskDone'}" data-id="${t.id}" aria-label="${t.done ? 'Batalkan selesai' : 'Tandai selesai'}: ${esc(t.title)}">${t.done ? '✓' : ''}</button><div class="grow" data-a="taskEdit" data-id="${t.id}"><div class="t">${t.prio === '1' ? '⭐ ' : ''}${esc(t.title)}${t.repeat && t.repeat !== 'none' ? ' ↻' : ''}</div><div class="s">${t.due ? (late ? '<span class="neg">Terlambat · </span>' : '') + fmtDate(t.due) : 'Tanpa tenggat'}${t.label ? ' · ' + esc(t.label) : ''}</div></div></div>`;
   }
   function evOccurrences(from, to) {
     const out = [];
@@ -238,45 +367,125 @@
     return out.sort((a, b) => C.cmp(a.date, b.date) || C.cmp(a.ev.time || '', b.ev.time || ''));
   }
   function evRow(o) {
-    return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:54px;color:var(--acc);font-weight:600">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
+    return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
+  }
+  const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
+  const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
+  function habitRow(x, t) {
+    const log = x.log || [], on = log.includes(t);
+    let dots = '';
+    for (let i = 6; i >= 0; i--) dots += `<span style="color:${log.includes(C.addDays(t, -i)) ? 'var(--acc)' : 'var(--line)'}">●</span>`;
+    return `<div class="row"><button class="chk ${on ? 'on' : ''}" data-a="habitTog" data-id="${x.id}" aria-label="Centang ${esc(x.name)} hari ini">${on ? '✓' : ''}</button><div class="grow" data-a="habitEdit" data-id="${x.id}"><div class="t">${esc(x.name)}</div><div class="s">${dots} · beruntun ${C.streak(log, t)} hari</div></div></div>`;
+  }
+  function planStatus(p) {
+    const t = C.today(), parts = [], rank = { ok: 0, soon: 1, late: 2 };
+    let lvl = 'ok';
+    if (p.nextDue) { const n = C.daysBetween(t, p.nextDue), l = C.urgency(n, 7); parts.push(C.countdown(n)); if (rank[l] > rank[lvl]) lvl = l; }
+    const v = p.vehicleId ? get('veh', p.vehicleId) : null, left = v ? C.kmLeft(p, v.odometer) : null;
+    if (left != null) { const l = left <= 0 ? 'late' : left <= 500 ? 'soon' : 'ok'; parts.push(left <= 0 ? 'lewat ' + num(-left) + ' km' : num(left) + ' km lagi'); if (rank[l] > rank[lvl]) lvl = l; }
+    return { lvl, text: parts.join(' · ') || 'Atur jadwal' };
+  }
+  const planInterval = (p) => [p.every > 0 ? C.intervalLabel(p) : '', p.kmEvery > 0 ? 'tiap ' + num(p.kmEvery) + ' km' : ''].filter(Boolean).join(' / ');
+  function planCard(p, showVeh) {
+    const st = planStatus(p), g = GROUPS[p.group] || GROUPS.rumah, v = p.vehicleId ? get('veh', p.vehicleId) : null;
+    return `<div class="card pc ${st.lvl === 'late' ? 'late' : ''}"><div class="pt" data-a="planOpen" data-id="${p.id}" style="cursor:pointer">${ic(g[2], g[1])}<div class="grow"><div class="t">${esc(p.name)}</div><div class="s">rutin ${esc(planInterval(p))}${showVeh && v ? ' · ' + esc(v.name) : ''}${p.lastDone ? ' · terakhir ' + fmtDate(p.lastDone) : ''}</div></div></div><div class="pa"><span class="bd ${st.lvl === 'ok' ? '' : st.lvl}">${esc(st.text)}</span><button class="btn sm" data-a="planDone" data-id="${p.id}">✓ Selesai</button></div></div>`;
+  }
+  const planSort = (a, b) => C.cmp(a.nextDue || '9999', b.nextDue || '9999');
+
+
+  // Ilustrasi rumah (gambar orisinal buatan sendiri, SVG inline: ringan, tajam di semua layar, jalan offline).
+  const HOUSE_SVG = `<svg viewBox="0 0 640 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ilustrasi rumah keluarga dengan taman" preserveAspectRatio="xMidYMid slice" style="display:block;width:100%;height:auto">
+<defs>
+<linearGradient id="hs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fd3d6"/><stop offset=".6" stop-color="#f7e6c8"/><stop offset="1" stop-color="#fbd9b0"/></linearGradient>
+<linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ccb86"/><stop offset="1" stop-color="#6fa86e"/></linearGradient>
+<linearGradient id="hr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d7a67"/><stop offset="1" stop-color="#2a5a4a"/></linearGradient>
+<radialGradient id="hsun"><stop offset="0" stop-color="#fff3c4"/><stop offset="1" stop-color="#fff3c4" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="640" height="250" fill="url(#hs)"/>
+<circle cx="520" cy="72" r="70" fill="url(#hsun)"/><circle cx="520" cy="72" r="30" fill="#ffd27a"/>
+<g fill="#fff" opacity=".85"><ellipse cx="120" cy="58" rx="46" ry="13"/><ellipse cx="150" cy="48" rx="30" ry="12"/><ellipse cx="390" cy="40" rx="40" ry="11"/><ellipse cx="415" cy="33" rx="24" ry="10"/><ellipse cx="590" cy="130" rx="34" ry="9" opacity=".6"/></g>
+<path d="M0 170 Q90 118 190 158 T380 150 T640 140 V250 H0Z" fill="#c9dfc8"/>
+<path d="M0 185 Q120 148 250 178 T470 170 T640 168 V250 H0Z" fill="#b4d3b4"/>
+<path d="M0 198 H640 V250 H0Z" fill="url(#hg)"/>
+<path d="M300 250 L310 214 H334 L346 250Z" fill="#efe0c4"/><path d="M310 214 H334 L331 204 H313Z" fill="#e6d3b0"/>
+<g id="hh">
+<rect x="236" y="118" width="176" height="86" fill="#f6e8d0"/><rect x="236" y="196" width="176" height="8" fill="#d9c4a0"/>
+<rect x="412" y="146" width="78" height="58" fill="#ecd9b9"/><rect x="412" y="196" width="78" height="8" fill="#d2bb94"/>
+<path d="M404 148 L451 118 L498 148Z" fill="url(#hr)"/><rect x="402" y="146" width="98" height="6" rx="2" fill="#244b3d"/>
+<rect x="372" y="62" width="20" height="40" fill="#b4553a"/><rect x="368" y="58" width="28" height="7" rx="2" fill="#8f3f29"/>
+<path d="M220 122 L324 56 L428 122Z" fill="url(#hr)"/><path d="M220 122 L324 56 L428 122" fill="none" stroke="#244b3d" stroke-width="5" stroke-linejoin="round"/>
+<g stroke="#244b3d" stroke-width="1.5" opacity=".35"><path d="M246 112 L324 63 L402 112"/><path d="M262 119 L324 79 L386 119"/></g>
+<circle cx="324" cy="97" r="12" fill="#ffe2a0" stroke="#5b4630" stroke-width="3"/><path d="M324 85v24M312 97h24" stroke="#5b4630" stroke-width="2"/>
+<rect x="302" y="146" width="40" height="58" rx="3" fill="#c2693f"/><rect x="308" y="152" width="28" height="22" rx="2" fill="#d98a5f"/><circle cx="335" cy="178" r="2.6" fill="#ffe2a0"/>
+<path d="M296 146 H348 L342 138 H302Z" fill="#244b3d"/>
+<g><rect x="252" y="140" width="38" height="36" rx="3" fill="#ffe2a0" stroke="#5b4630" stroke-width="3.5"/><path d="M271 140v36M252 158h38" stroke="#5b4630" stroke-width="2.5"/>
+<rect x="358" y="140" width="38" height="36" rx="3" fill="#ffe2a0" stroke="#5b4630" stroke-width="3.5"/><path d="M377 140v36M358 158h38" stroke="#5b4630" stroke-width="2.5"/>
+<rect x="430" y="164" width="40" height="26" rx="3" fill="#ffe2a0" stroke="#5b4630" stroke-width="3.5"/><path d="M450 164v26" stroke="#5b4630" stroke-width="2.5"/></g>
+<g fill="#c2693f"><rect x="248" y="176" width="46" height="6" rx="2"/><rect x="354" y="176" width="46" height="6" rx="2"/></g>
+<g fill="#e07a9b"><circle cx="256" cy="175" r="3"/><circle cx="268" cy="173" r="3"/><circle cx="280" cy="175" r="3"/><circle cx="362" cy="175" r="3"/><circle cx="374" cy="173" r="3"/><circle cx="386" cy="175" r="3"/></g>
+</g>
+<g fill="#fff" opacity=".7"><circle cx="383" cy="46" r="5"/><circle cx="391" cy="34" r="7"/><circle cx="403" cy="22" r="9"/></g>
+<g><rect x="168" y="150" width="9" height="58" fill="#7a5638"/><circle cx="172" cy="130" r="34" fill="#4f9a6a"/><circle cx="150" cy="150" r="24" fill="#5fae78"/><circle cx="196" cy="148" r="26" fill="#468a60"/><circle cx="166" cy="116" r="18" fill="#6bbd84" opacity=".8"/></g>
+<g><rect x="556" y="164" width="7" height="44" fill="#7a5638"/><circle cx="560" cy="150" r="26" fill="#4f9a6a"/><circle cx="578" cy="164" r="18" fill="#5fae78"/><circle cx="544" cy="166" r="16" fill="#468a60"/></g>
+<g fill="#4a9060"><ellipse cx="238" cy="204" rx="22" ry="12"/><ellipse cx="402" cy="204" rx="20" ry="11"/><ellipse cx="496" cy="204" rx="16" ry="9"/></g>
+<g fill="#f2c14e"><circle cx="228" cy="200" r="2.6"/><circle cx="240" cy="206" r="2.6"/><circle cx="398" cy="202" r="2.6"/><circle cx="410" cy="207" r="2.6"/></g>
+<g stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".92"><path d="M20 216h78M104 216h60M470 224h84M560 224h70"/></g>
+<g fill="none" stroke="#5b4630" stroke-width="2" stroke-linecap="round" opacity=".7"><path d="M90 88q5-6 10 0q5-6 10 0"/><path d="M130 100q4-5 8 0q4-5 8 0"/></g>
+</svg>`;
+
+  // ---------- ringkasan hari ini ----------
+  function todayItems() {
+    const t = C.today(), rows = [];
+    const tasks = list('task').filter((x) => !x.done && x.due && x.due <= t);
+    const late = tasks.filter((x) => x.due < t).length, now = tasks.length - late;
+    if (late) rows.push(['c3', '⏰', late + ' tugas terlambat', 'tugas']);
+    if (now) rows.push(['c2', '✅', now + ' tugas untuk hari ini', 'tugas']);
+    evOccurrences(t, C.addDays(t, 1)).forEach((o) => rows.push(['c4', '📅', esc(o.ev.title) + (o.ev.time && !o.ev.allDay ? ' pukul ' + esc(o.ev.time) : ''), 'tab:cal']));
+    const bs = C.budgetStatus(list('budget'), C.monthReport(list('tx'), nowYM()));
+    const bad = bs.filter((b) => b.level !== 'ok');
+    if (bad.length) bad.forEach((b) => rows.push(['c6', b.level === 'over' ? '🚨' : '⚠️', 'Anggaran ' + esc(b.cat) + ' ' + b.pct + '%', 'tab:money']));
+    else if (bs.length) rows.push(['c2', '✅', 'Budget masih aman', 'tab:money']);
+    C.homeAttention(store, t).slice(0, 5).forEach((a) => rows.push([a.level === 'late' ? 'c3' : 'c1', a.icon, esc(a.text) + (a.kind === 'plankm' || a.kind === 'low' ? '' : ' — ' + C.countdown(a.n)), a.go]));
+    const hp = list('habit').filter((h) => !(h.log || []).includes(t)).length;
+    if (hp) rows.push(['c5', '🌱', hp + ' kebiasaan belum dicentang', 'habit']);
+    return rows;
   }
 
+  // ---------- halaman utama (tab) ----------
   function vToday() {
-    const t = C.today(), d = C.parseD(t);
+    const t = C.today(), d = C.parseD(t), hr = new Date().getHours();
+    const greet = hr < 11 ? 'Selamat pagi' : hr < 15 ? 'Selamat siang' : hr < 18 ? 'Selamat sore' : 'Selamat malam';
+    const accs = list('acc'), nw = C.netWorth(accs, list('tx')), rep = C.monthReport(list('tx'), nowYM());
+    const items = todayItems();
     const tasks = list('task').filter((x) => !x.done && x.due && x.due <= t).sort(byDue);
-    const evs = evOccurrences(t, C.addDays(t, 1));
-    const rep = C.monthReport(list('tx'), nowYM());
-    const alerts = C.budgetStatus(list('budget'), rep).filter((b) => b.level !== 'ok');
-    const warr = C.warrantySoon(list('asset'), t, 30);
-    const svc = C.serviceDue(list('asset'), t);
-    const habits = list('habit');
-    const accs = list('acc');
-    const nw = C.netWorth(accs, list('tx'));
-    const empty = !list('task').length && !list('event').length && !accs.length;
-    let h = `<div class="card pad"><div class="mute" style="font-size:.85rem">Kekayaan bersih</div><div class="big ${sgn(nw)}">${accs.length ? rp(nw) : '—'}</div><div class="s mute">${accs.length ? 'Bulan ini: +' + rp(rep.income) + ' / −' + rp(rep.expense) : 'Tambahkan akun di tab Uang'}</div></div>`;
-    if (empty) h += `<div class="card pad"><b>Selamat datang 👋</b><p class="mute" style="margin:6px 0 0">Mulai dengan tombol <b>+</b> di kanan bawah: catat tugas, acara, atau pengeluaran pertama Anda. Data tersimpan di perangkat ini; hubungkan Google Drive di <b>Lainnya → Pengaturan</b> agar HP dan PC sama.</p></div>`;
-    h += `<h2>Tugas hari ini &amp; terlambat</h2><div class="card">${tasks.length ? tasks.map((x) => taskRow(x, t)).join('') : '<div class="empty">Tidak ada tugas jatuh tempo 🎉</div>'}</div>`;
-    h += `<h2>Acara hari ini</h2><div class="card">${evs.length ? evs.map(evRow).join('') : '<div class="empty">Tidak ada acara.</div>'}</div>`;
-    if (alerts.length) h += `<h2>Anggaran perlu perhatian</h2><div class="card">${alerts.map((b) => `<div class="row"><div class="grow"><div class="t">${esc(b.cat)} <span class="tag ${b.level === 'over' ? 'bad' : 'warn'}">${b.pct}%</span></div><div class="s">${rp(b.spent)} dari ${rp(b.limit)}</div></div></div>`).join('')}</div>`;
-    if (svc.length || warr.length) h += `<h2>Rumah</h2><div class="card">${svc.map((a) => `<div class="row"><div class="grow" data-a="assetEdit" data-id="${a.id}"><div class="t">🔧 Servis: ${esc(a.name)}</div><div class="s">Jatuh tempo ${fmtDate(a.nextService)}</div></div><button class="btn sm" data-a="serviced" data-id="${a.id}">Sudah</button></div>`).join('')}${warr.map((a) => `<div class="row" data-a="assetEdit" data-id="${a.id}"><div class="grow"><div class="t">🛡️ Garansi: ${esc(a.name)}</div><div class="s">Berakhir ${fmtDate(a.warrantyUntil)}</div></div></div>`).join('')}</div>`;
-    if (habits.length) h += `<h2>Kebiasaan</h2><div class="card">${habits.map((x) => habitRow(x, t)).join('')}</div>`;
-    return { title: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()], sub: d.getFullYear() + '', html: h };
+    let h = `<div class="card" style="padding:0;overflow:hidden">${HOUSE_SVG}</div><div class="card hero pad" data-a="tab" data-v="money" style="cursor:pointer"><div class="s">Kekayaan bersih</div><div class="big">${accs.length ? rp(nw) : 'Mulai catat uang'}</div><div class="s">${accs.length ? 'Bulan ini +' + rp(rep.income) + ' · −' + rp(rep.expense) : 'Ketuk untuk menambah akun pertama'}</div></div>`;
+    h += `<h2>Hari ini</h2><div class="card">${items.length ? items.map((r) => `<div class="hr" data-a="nav" data-to="${r[3]}">${ic(r[0], r[1])}<div class="grow t" style="font-weight:600">${r[2]}</div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada yang perlu diperhatikan. Mulai dengan tombol + atau isi data contoh di Lainnya → Bantuan.</div>'}</div>`;
+    if (tasks.length) h += `<h2>Agenda tugas</h2><div class="card">${tasks.map((x) => taskRow(x, t)).join('')}</div>`;
+    h += `<h2>Menu</h2><div class="tiles">${[['🛠️', 'Rumah', 'tab:rumah'], ['🔧', 'Perawatan', 'perawatan'], ['🧾', 'Tagihan', 'tagihan'], ['🚗', 'Kendaraan', 'kendaraan'], ['🛒', 'Belanja', 'stok'], ['✅', 'Tugas', 'tugas'], ['📓', 'Jurnal', 'jurnal'], ['🌱', 'Kebiasaan', 'habit']].map((m) => `<div class="tile" data-a="nav" data-to="${m[2]}" role="button" tabindex="0"><span class="em">${m[0]}</span>${m[1]}</div>`).join('')}</div>`;
+    return { title: greet, sub: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(), html: h };
   }
 
-  function vTasks() {
-    const t = C.today(), all = list('task');
-    const act = all.filter((x) => !x.done).sort(byDue), done = all.filter((x) => x.done).sort((a, b) => C.cmp(b.doneAt || '', a.doneAt || ''));
-    const f = ui.taskFilter, shown = f === 'aktif' ? act : done;
-    const h = `<div class="chips"><button class="chip ${f === 'aktif' ? 'on' : ''}" data-a="taskFilter" data-v="aktif">Aktif (${act.length})</button><button class="chip ${f === 'selesai' ? 'on' : ''}" data-a="taskFilter" data-v="selesai">Selesai (${done.length})</button></div><div class="card">${shown.length ? shown.map((x) => taskRow(x, t)).join('') : `<div class="empty">${f === 'aktif' ? 'Belum ada tugas. Ketuk + untuk menambah.' : 'Belum ada tugas selesai.'}</div>`}</div><button class="btn" data-a="taskAdd">+ Tugas baru</button>`;
-    return { title: 'Tugas', sub: act.length + ' aktif', html: h };
+  function vRumah() {
+    const t = C.today(), att = C.homeAttention(store, t);
+    const cnt = (kinds) => att.filter((a) => kinds.includes(a.kind)).length;
+    const tile = (em, name, to, n, sub) => `<div class="tile" data-a="nav" data-to="${to}" role="button" tabindex="0">${n ? `<span class="n">${n}</span>` : ''}<span class="em">${em}</span>${name}<small>${esc(sub)}</small></div>`;
+    let h = `<h2>Perlu perhatian</h2><div class="card">${att.length ? att.slice(0, 6).map((a) => `<div class="hr" data-a="nav" data-to="${a.go}">${ic(a.level === 'late' ? 'c3' : 'c6', a.icon)}<div class="grow"><div class="t">${esc(a.text)}</div></div>${a.kind === 'plankm' || a.kind === 'low' ? `<span class="bd ${a.level === 'late' ? 'late' : 'soon'}">${a.kind === 'low' ? 'menipis' : a.level === 'late' ? 'lewat' : 'segera'}</span>` : badge(a.date)}</div>`).join('') : '<div class="empty">Semua beres 🎉 Tidak ada perawatan, tagihan, atau dokumen yang mendesak.</div>'}</div>`;
+    h += `<h2>Kelola</h2><div class="tiles">`
+      + tile('🔧', 'Perawatan', 'perawatan', cnt(['plan']), list('plan').filter((p) => !p.vehicleId).length + ' rencana')
+      + tile('🧾', 'Tagihan rutin', 'tagihan', cnt(['bill']), list('bill').length + ' tagihan')
+      + tile('🚗', 'Kendaraan', 'kendaraan', cnt(['pajak', 'stnk', 'plankm']), list('veh').length + ' kendaraan')
+      + tile('🛡️', 'Aset & garansi', 'aset', cnt(['warranty']), list('asset').length + ' aset')
+      + tile('🛒', 'Stok & belanja', 'stok', cnt(['low', 'invexp']), list('inv').length + ' barang stok')
+      + tile('📄', 'Dokumen', 'dokumen', cnt(['doc']), list('doc').length + ' dokumen')
+      + tile('📞', 'Kontak', 'kontak', 0, list('contact').length + ' kontak') + '</div>';
+    return { title: 'Rumah', sub: att.length ? att.length + ' hal perlu perhatian' : 'Semuanya terkendali', html: h };
   }
 
   function vCal() {
     if (!ui.calMonth) ui.calMonth = nowYM();
     const ym = ui.calMonth, t = C.today();
     const first = C.parseD(ym + '-01'), lead = (first.getDay() + 6) % 7;
-    const nDays = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-    const next = ymShift(ym, 1) + '-01';
+    const nDays = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(), next = ymShift(ym, 1) + '-01';
     const evMap = {}, tkMap = {};
     evOccurrences(ym + '-01', next).forEach((o) => { (evMap[o.date] = evMap[o.date] || []).push(o); });
     list('task').filter((x) => !x.done && x.due).forEach((x) => { (tkMap[x.due] = tkMap[x.due] || []).push(x); });
@@ -286,126 +495,220 @@
       const ds = ym + '-' + String(d).padStart(2, '0');
       cells += `<button class="day ${ds === t ? 'today' : ''} ${ds === ui.calSel ? 'sel' : ''}" data-a="calSel" data-v="${ds}" aria-label="${fmtDate(ds)}">${d}<div class="dots">${evMap[ds] ? '<i></i>' : ''}${tkMap[ds] ? '<i class="t"></i>' : ''}</div></button>`;
     }
-    let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="grid">${cells}</div>`;
+    let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="card pad"><div class="grid">${cells}</div></div>`;
     const sel = ui.calSel;
     if (sel) {
-      const es = evOccurrences(sel, C.addDays(sel, 1)), ts = (tkMap[sel] || []);
-      h += `<h2>${fmtDate(sel)}</h2><div class="card">${es.map(evRow).join('')}${ts.map((x) => taskRow(x, t)).join('')}${es.length + ts.length ? '' : '<div class="empty">Kosong.</div>'}</div><button class="btn" data-a="evAdd">+ Acara di tanggal ini</button>`;
-    } else h += '<p class="note">Ketuk tanggal untuk melihat agenda. Titik hijau = acara, kuning = tugas.</p><button class="btn" data-a="evAdd">+ Acara baru</button>';
+      const es = evOccurrences(sel, C.addDays(sel, 1)), ts = tkMap[sel] || [];
+      h += `<h2>${fmtDate(sel)}</h2><div class="card">${es.map(evRow).join('')}${ts.map((x) => taskRow(x, t)).join('')}${es.length + ts.length ? '' : '<div class="empty">Kosong.</div>'}</div><button class="btn full" data-a="evAdd">+ Acara di tanggal ini</button>`;
+    } else h += '<p class="note">Ketuk tanggal untuk melihat agenda. Titik hijau = acara, kuning = tugas.</p><button class="btn full" data-a="evAdd">+ Acara baru</button>';
     return { title: 'Kalender', sub: '', html: h };
   }
 
   function vMoney() {
     if (!ui.moneyMonth) ui.moneyMonth = nowYM();
     const ym = ui.moneyMonth, accs = list('acc'), txs = list('tx');
-    const bal = C.balances(accs, txs), nw = C.netWorth(accs, txs), rep = C.monthReport(txs, ym);
-    const bud = C.budgetStatus(list('budget'), rep);
+    const bal = C.balances(accs, txs), nw = C.netWorth(accs, txs), rep = C.monthReport(txs, ym), bud = C.budgetStatus(list('budget'), rep);
     const accName = (id) => (accs.find((a) => a.id === id) || { name: '?' }).name;
-    let h = `<div class="card pad"><div class="mute" style="font-size:.85rem">Kekayaan bersih (semua akun)</div><div class="big ${sgn(nw)}">${rp(nw)}</div></div>`;
-    h += `<h2>Akun</h2><div class="card">${accs.length ? accs.map((a) => `<div class="row" data-a="accEdit" data-id="${a.id}"><div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${esc(a.type)}</div></div><div class="${sgn(bal[a.id] || 0)}"><b>${rp(bal[a.id] || 0)}</b></div></div>`).join('') : '<div class="empty">Belum ada akun. Buat satu (mis. Dompet, BCA).</div>'}</div><button class="btn alt sm" data-a="accAdd">+ Akun</button><p class="note">Membayar kartu kredit = <b>transfer</b> dari akun bank ke akun kartu, bukan pengeluaran.</p>`;
+    let h = `<div class="card hero pad"><div class="s">Kekayaan bersih (semua akun)</div><div class="big">${rp(nw)}</div></div>`;
+    h += `<h2>Akun</h2><div class="card">${accs.length ? accs.map((a) => `<div class="row" data-a="accEdit" data-id="${a.id}">${ic('c2', a.type === 'bank' ? '🏦' : a.type === 'ewallet' ? '📱' : a.type === 'kartu' ? '💳' : a.type === 'invest' ? '📈' : '👛')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${esc(a.type)}</div></div><div class="${sgn(bal[a.id] || 0)}"><b>${rp(bal[a.id] || 0)}</b></div></div>`).join('') : '<div class="empty">Belum ada akun. Buat satu (mis. Dompet, BCA).</div>'}</div><button class="btn alt sm" data-a="accAdd">+ Akun</button><p class="note">Membayar kartu kredit = <b>transfer</b> dari akun bank ke akun kartu, bukan pengeluaran.</p>`;
     h += `<div class="inl" style="justify-content:space-between;align-items:center;margin-top:14px"><button class="btn alt sm" data-a="mPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="mNext" aria-label="Bulan berikutnya">›</button></div>`;
-    h += `<div class="card pad"><div class="row" style="border:0;padding:0"><div class="grow">Pemasukan<div class="pos"><b>${rp(rep.income)}</b></div></div><div class="grow">Pengeluaran<div class="neg"><b>${rp(rep.expense)}</b></div></div><div class="grow">Selisih<div class="${sgn(rep.income - rep.expense)}"><b>${rp(rep.income - rep.expense)}</b></div></div></div></div>`;
-    h += `<h2>Anggaran</h2><div class="card">${bud.length ? bud.map((b) => `<div class="row" data-a="budEdit" data-id="${b.id}" style="display:block"><div style="display:flex;justify-content:space-between"><span class="t">${esc(b.cat)}</span><span class="s">${rp(b.spent)} / ${rp(b.limit)} · ${b.pct}%</span></div><div class="bar"><i class="${b.level === 'ok' ? '' : b.level}" style="width:${Math.min(100, b.pct)}%"></i></div></div>`).join('') : '<div class="empty">Belum ada anggaran.</div>'}</div><button class="btn alt sm" data-a="budAdd">+ Anggaran</button>`;
+    h += `<div class="card pad"><div class="row" style="border:0;padding:0"><div class="grow s">Pemasukan<div class="pos t">${rp(rep.income)}</div></div><div class="grow s">Pengeluaran<div class="neg t">${rp(rep.expense)}</div></div><div class="grow s">Selisih<div class="t ${sgn(rep.income - rep.expense)}">${rp(rep.income - rep.expense)}</div></div></div></div>`;
+    h += `<h2>Anggaran</h2><div class="card">${bud.length ? bud.map((b) => `<div class="row" data-a="budEdit" data-id="${b.id}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${esc(b.cat)}</span><span class="s">${rp(b.spent)} / ${rp(b.limit)} · ${b.pct}%</span></div><div class="bar"><i class="${b.level === 'ok' ? '' : b.level}" style="width:${Math.min(100, b.pct)}%"></i></div></div>`).join('') : '<div class="empty">Belum ada anggaran.</div>'}</div><button class="btn alt sm" data-a="budAdd">+ Anggaran</button>`;
     const month = txs.filter((t) => t.date && t.date.slice(0, 7) === ym).sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
     h += `<h2>Transaksi</h2><div class="card">${month.length ? month.map((t) => {
       const lbl = t.kind === 'transfer' ? `${esc(accName(t.acc))} → ${esc(accName(t.to))}` : esc(t.cat || '') + ' · ' + esc(accName(t.acc));
-      const col = t.kind === 'income' ? 'pos' : t.kind === 'expense' ? 'neg' : '';
-      const sign = t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : '⇄ ';
+      const col = t.kind === 'income' ? 'pos' : t.kind === 'expense' ? 'neg' : '', sign = t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : '⇄ ';
       return `<div class="row" ${t.void ? 'style="opacity:.5;text-decoration:line-through"' : ''}><div class="grow"><div class="t">${lbl}${t.void ? ' <span class="tag">void</span>' : ''}</div><div class="s">${fmtDate(t.date)}${t.note ? ' · ' + esc(t.note) : ''}</div></div><div class="${col}"><b>${sign}${rp(t.amount)}</b></div>${t.void ? '' : `<button class="link" data-a="txVoid" data-id="${t.id}" aria-label="Void transaksi">void</button>`}</div>`;
-    }).join('') : '<div class="empty">Belum ada transaksi bulan ini.</div>'}</div><button class="btn" data-a="txAdd">+ Catat transaksi</button><p class="note">Transaksi tidak pernah dihapus: "void" membuatnya dianggap tidak ada, riwayatnya tetap tersimpan.</p>`;
+    }).join('') : '<div class="empty">Belum ada transaksi bulan ini.</div>'}</div><button class="btn full" data-a="txAdd">+ Catat transaksi</button><p class="note">Transaksi tidak pernah dihapus: "void" membuatnya dianggap tidak ada, riwayatnya tetap tersimpan.</p>`;
     return { title: 'Uang', sub: '', html: h };
   }
 
-  function habitRow(x, t) {
-    const log = x.log || [], on = log.includes(t);
-    let dots = '';
-    for (let i = 6; i >= 0; i--) dots += `<span style="color:${log.includes(C.addDays(t, -i)) ? 'var(--acc)' : 'var(--line)'}">●</span>`;
-    return `<div class="row"><button class="chk ${on ? 'on' : ''}" data-a="habitTog" data-id="${x.id}" aria-label="Centang ${esc(x.name)} hari ini">${on ? '✓' : ''}</button><div class="grow" data-a="habitEdit" data-id="${x.id}"><div class="t">${esc(x.name)}</div><div class="s">${dots} · beruntun ${C.streak(log, t)} hari</div></div></div>`;
+  function vMore() {
+    const g = (title, rows) => `<h2>${title}</h2><div class="card">${rows.join('')}</div>`;
+    const h = g('Rumah & catatan', [
+      mrow('c2', '🔧', 'Perawatan', 'Servis AC, kuras toren, dll.', 'perawatan'), mrow('c6', '🧾', 'Tagihan rutin', 'Listrik, internet, air, PBB', 'tagihan'),
+      mrow('c4', '🚗', 'Kendaraan', 'Pajak, STNK, odometer, servis', 'kendaraan'), mrow('c1', '🛡️', 'Aset & garansi', 'Barang berharga dan masa garansi', 'aset'),
+      mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
+      mrow('c4', '📄', 'Dokumen penting', 'Lokasi simpan & masa berlaku', 'dokumen')])
+      + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
+      + g('Pengaturan', [mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
+    return { title: 'Lainnya', sub: '', html: h };
   }
 
-  function vMore() {
-    const sub = (k, items) => `<div class="chips">${items.map((i) => `<button class="chip ${ui[k] === i[0] ? 'on' : ''}" data-a="sub" data-k="${k}" data-v="${i[0]}">${i[1]}</button>`).join('')}</div>`;
-    const sec = ui.section || 'rumah';
-    let h = `<div class="chips">${[['rumah', '🏡 Rumah'], ['pribadi', '📓 Pribadi'], ['set', '⚙️ Pengaturan']].map((i) => `<button class="chip ${sec === i[0] ? 'on' : ''}" data-a="section" data-v="${i[0]}">${i[1]}</button>`).join('')}</div>`;
-    if (sec === 'rumah') {
-      h += sub('rumah', [['aset', 'Aset'], ['belanja', 'Belanja'], ['kontak', 'Kontak']]);
-      if (ui.rumah === 'aset') {
-        const as = list('asset').sort((a, b) => C.cmp(a.name, b.name));
-        h += `<div class="card">${as.length ? as.map((a) => `<div class="row" data-a="assetEdit" data-id="${a.id}"><div class="grow"><div class="t">${esc(a.name)} <span class="tag">${esc(a.cat || '')}</span></div><div class="s">${a.warrantyUntil ? 'Garansi s/d ' + fmtDate(a.warrantyUntil) : 'Tanpa garansi'}${a.nextService ? ' · servis ' + fmtDate(a.nextService) : ''}</div></div></div>`).join('') : '<div class="empty">Belum ada aset. Catat barang berharga, kendaraan, dan masa garansinya.</div>'}</div><button class="btn" data-a="assetAdd">+ Aset</button>`;
-      } else if (ui.rumah === 'belanja') {
+  // ---------- subhalaman ----------
+  const pages = {
+    perawatan() {
+      const gSel = ui.planGroup, all = list('plan').filter((p) => !p.vehicleId);
+      const shown = all.filter((p) => gSel === 'semua' || p.group === gSel).sort(planSort);
+      let h = seg('planGroup', [['semua', 'Semua'], ['rumah', 'Rumah'], ['elektronik', 'Elektronik']], gSel === 'kendaraan' ? 'semua' : gSel);
+      h += shown.length ? shown.map((p) => planCard(p)).join('') : '<div class="card"><div class="empty">Belum ada rencana perawatan.<br>Mulai cepat dengan template di bawah.</div></div>';
+      h += '<button class="btn full" data-a="planAdd">+ Rencana perawatan</button><div style="height:10px"></div><button class="btn alt full" data-a="planTpl">✨ Tambah dari template</button><p class="note">Perawatan kendaraan (servis, ganti oli) diatur di halaman Kendaraan agar bisa memakai interval kilometer.</p>';
+      return { title: 'Perawatan', sub: all.length + ' rencana', html: h, add: () => planForm() };
+    },
+    planDetail(p) {
+      const pl = get('plan', p.id); if (!pl) return null;
+      const st = planStatus(pl), g = GROUPS[pl.group] || GROUPS.rumah, v = pl.vehicleId ? get('veh', pl.vehicleId) : null;
+      const logs = list('plog').filter((l) => l.planId === pl.id).sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
+      let h = `<div class="card pad"><div style="display:flex;gap:12px;align-items:center">${ic(g[2], g[1])}<div class="grow"><div class="t">${esc(pl.name)}</div><div class="s">${esc(g[0])} · rutin ${esc(planInterval(pl))}</div></div><span class="bd ${st.lvl === 'ok' ? '' : st.lvl}">${esc(st.text)}</span></div></div>`;
+      h += `<div class="card">${pl.nextDue ? `<div class="kv"><span>Jatuh tempo</span><b>${fmtDate(pl.nextDue)}</b></div>` : ''}${pl.nextKm ? `<div class="kv"><span>Pada odometer</span><b>${num(pl.nextKm)} km</b></div>` : ''}${v ? `<div class="kv"><span>Kendaraan</span><b>${esc(v.name)}${v.odometer ? ' · ' + num(v.odometer) + ' km' : ''}</b></div>` : ''}<div class="kv"><span>Terakhir dikerjakan</span><b>${pl.lastDone ? fmtDate(pl.lastDone) : '—'}</b></div>${pl.cost ? `<div class="kv"><span>Perkiraan biaya</span><b>${rp(pl.cost)}</b></div>` : ''}${pl.notes ? `<div class="kv"><span>Catatan</span><span>${esc(pl.notes)}</span></div>` : ''}</div>`;
+      h += `<div class="btns"><button class="btn" data-a="planDone" data-id="${pl.id}">✓ Selesai</button><button class="btn alt" data-a="planEdit" data-id="${pl.id}">Ubah</button></div>`;
+      h += `<h2>Riwayat</h2><div class="card">${logs.length ? logs.map((l) => `<div class="row"><div class="grow"><div class="t">${fmtDate(l.date)}</div><div class="s">${l.note ? esc(l.note) : ''}${l.odo ? ' · ' + num(l.odo) + ' km' : ''}</div></div>${l.cost ? `<b>${rp(l.cost)}</b>` : ''}</div>`).join('') : '<div class="empty">Belum ada riwayat.</div>'}</div>`;
+      return { title: 'Detail perawatan', sub: '', html: h };
+    },
+    kendaraan() {
+      const vs = list('veh').sort((a, b) => C.cmp(a.name, b.name));
+      let h = '';
+      vs.forEach((v) => {
+        const plans = list('plan').filter((p) => p.vehicleId === v.id).sort(planSort);
+        h += `<div class="card pad"><div style="display:flex;gap:12px;align-items:center" data-a="vehEdit" data-id="${v.id}">${ic('c4', v.kind === 'mobil' ? '🚗' : v.kind === 'motor' ? '🛵' : '🚙')}<div class="grow"><div class="t">${esc(v.name)}</div><div class="s">${v.plate ? esc(v.plate) + ' · ' : ''}${v.odometer !== '' && v.odometer != null ? num(v.odometer) + ' km' : 'odometer belum diisi'}</div></div><span class="chev">✎</span></div>
+        ${v.pajakDue ? `<div class="kv"><span>Pajak tahunan</span><span>${fmtDate(v.pajakDue)} ${badge(v.pajakDue)}</span></div>` : ''}${v.stnkDue ? `<div class="kv"><span>STNK 5 tahunan</span><span>${fmtDate(v.stnkDue)} ${badge(v.stnkDue)}</span></div>` : ''}
+        <div class="btns" style="margin-top:10px"><button class="btn alt sm" data-a="odoUpd" data-id="${v.id}">Update odometer</button><button class="btn alt sm" data-a="vehPlan" data-id="${v.id}">+ Perawatan</button><button class="btn alt sm" data-a="vehTpl" data-id="${v.id}">✨ Template</button></div></div>`;
+        h += plans.length ? plans.map((p) => planCard(p)).join('') : '<p class="note">Belum ada rencana servis untuk kendaraan ini. Coba "Template" (ganti oli, servis berkala).</p>';
+      });
+      if (!vs.length) h = '<div class="card"><div class="empty">Belum ada kendaraan.<br>Tambahkan motor/mobil untuk melacak pajak, STNK, odometer, dan jadwal servis.</div></div>';
+      h += '<button class="btn full" data-a="vehAdd">+ Tambah kendaraan</button>';
+      return { title: 'Kendaraan', sub: vs.length + ' kendaraan', html: h, add: () => vehForm() };
+    },
+    tagihan() {
+      const t = C.today(), bs = list('bill').map((b) => ({ b, due: C.billNext(b, t) })).sort((x, y) => C.cmp(x.due, y.due));
+      const total = list('bill').reduce((s, b) => s + (b.amountEst || 0), 0);
+      let h = `<div class="card hero pad"><div class="s">Perkiraan tagihan rutin per bulan</div><div class="big">${rp(total)}</div><div class="s">${list('bill').length} tagihan</div></div>`;
+      h += `<div class="card">${bs.length ? bs.map(({ b, due }) => {
+        const n = C.daysBetween(t, due), lvl = C.urgency(n, 5);
+        return `<div class="row">${ic(lvl === 'late' ? 'c3' : 'c6', '🧾')}<div class="grow" data-a="billEdit" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">Tiap tgl ${b.dueDay}${b.amountEst ? ' · ±' + rp(b.amountEst) : ''}${b.lastPaid ? ' · terakhir ' + fmtDate(b.lastPaid) : ''}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${badge(due)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button></div></div>`;
+      }).join('') : '<div class="empty">Belum ada tagihan rutin.<br>Tambahkan listrik, internet, air, PBB, dan lainnya.</div>'}</div><button class="btn full" data-a="billAdd">+ Tagihan rutin</button><p class="note">"Bayar" menandai periode ini lunas dan, bila Anda pilih akun, langsung mencatat pengeluaran di tab Uang.</p>`;
+      return { title: 'Tagihan rutin', sub: '', html: h, add: () => billForm() };
+    },
+    aset() {
+      const cats = ['Semua'].concat(Object.keys(ASSET_EMOJI));
+      const as = list('asset').filter((a) => ui.assetCat === 'Semua' || a.cat === ui.assetCat).sort((a, b) => C.cmp(a.name, b.name));
+      let h = seg('assetCat', cats.map((c) => [c, c]), ui.assetCat);
+      h += `<div class="card">${as.length ? as.map((a) => `<div class="row" data-a="assetEdit" data-id="${a.id}">${ic('c1', ASSET_EMOJI[a.cat] || '📦')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${a.place ? esc(a.place) + ' · ' : ''}${a.price ? rp(a.price) : ''}</div></div>${a.warrantyUntil ? (a.warrantyUntil >= C.today() ? `<div style="text-align:right"><div class="s">Garansi</div>${badge(a.warrantyUntil)}</div>` : '<span class="bd">garansi habis</span>') : ''}</div>`).join('') : '<div class="empty">Belum ada aset. Catat barang berharga, nomor seri, dan masa garansinya.</div>'}</div><button class="btn full" data-a="assetAdd">+ Aset</button><p class="note">Kendaraan dicatat di halaman Kendaraan.</p>`;
+      return { title: 'Aset & garansi', sub: list('asset').length + ' aset', html: h, add: () => assetForm() };
+    },
+    stok() {
+      const tab = ui.stokTab;
+      let h = seg('stokTab', [['belanja', '🛒 Belanja'], ['stok', '📦 Stok']], tab);
+      if (tab === 'belanja') {
         const it = list('shop').sort((a, b) => C.cmp(!!a.done, !!b.done) || C.cmp(a.name, b.name));
         h += `<form class="inl" data-form="shop"><input name="n" placeholder="Tambah barang…" aria-label="Nama barang" autocomplete="off"><button class="btn">Tambah</button></form><div class="card">${it.length ? it.map((x) => `<div class="row ${x.done ? 'done' : ''}"><button class="chk ${x.done ? 'on' : ''}" data-a="shopTog" data-id="${x.id}" aria-label="Centang ${esc(x.name)}">${x.done ? '✓' : ''}</button><div class="grow t">${esc(x.name)}</div></div>`).join('') : '<div class="empty">Daftar belanja kosong.</div>'}</div>${it.some((x) => x.done) ? '<button class="btn alt sm" data-a="shopClear">Bersihkan yang sudah dicentang</button>' : ''}`;
       } else {
-        const cs = list('contact').sort((a, b) => C.cmp(!!b.emergency, !!a.emergency) || C.cmp(a.name, b.name));
-        h += `<div class="card">${cs.length ? cs.map((c) => `<div class="row"><div class="grow" data-a="contactEdit" data-id="${c.id}"><div class="t">${c.emergency ? '🚨 ' : ''}${esc(c.name)}</div><div class="s">${esc(c.role || '')}</div></div>${c.phone ? `<a class="btn sm" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(c.phone)}</a>` : ''}</div>`).join('') : '<div class="empty">Belum ada kontak penting (tukang, dokter, RT, PLN…).</div>'}</div><button class="btn" data-a="contactAdd">+ Kontak</button>`;
+        const inv = list('inv').sort((a, b) => C.cmp(a.name, b.name)), low = C.lowStock(inv);
+        h += `${low.length ? `<button class="btn alt full" data-a="invToShop" style="margin-bottom:12px">📥 Masukkan ${low.length} barang menipis ke daftar belanja</button>` : ''}<div class="card">${inv.length ? inv.map((i) => `<div class="row">${ic('c3', '📦')}<div class="grow" data-a="invEdit" data-id="${i.id}"><div class="t">${esc(i.name)}${C.lowStock([i]).length ? ' <span class="bd late">menipis</span>' : ''}</div><div class="s">${i.min ? 'min ' + i.min + ' · ' : ''}${i.place ? esc(i.place) + ' · ' : ''}${i.expiry ? 'exp ' + fmtDate(i.expiry) : ''}</div></div><button class="qb" data-a="invDec" data-id="${i.id}" aria-label="Kurangi ${esc(i.name)}">−</button><div class="qty">${i.qty} ${esc(i.unit || '')}</div><button class="qb" data-a="invInc" data-id="${i.id}" aria-label="Tambah ${esc(i.name)}">+</button></div>`).join('') : '<div class="empty">Belum ada stok. Catat gas, beras, obat, dll. dengan batas minimum.</div>'}</div><button class="btn full" data-a="invAdd">+ Barang stok</button>`;
       }
-    } else if (sec === 'pribadi') {
-      h += sub('pribadi', [['jurnal', 'Jurnal'], ['habit', 'Kebiasaan']]);
-      if (ui.pribadi === 'jurnal') {
-        const js = list('journal').sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
-        h += `<div class="card">${js.length ? js.map((j) => `<div class="row" data-a="journalEdit" data-id="${j.id}"><div style="font-size:1.5rem">${MOODS[(+j.mood || 3) - 1]}</div><div class="grow"><div class="s">${fmtDate(j.date)}</div><div class="t">${esc(j.text.length > 140 ? j.text.slice(0, 140) + '…' : j.text)}</div></div></div>`).join('') : '<div class="empty">Belum ada jurnal.</div>'}</div><button class="btn" data-a="journalAdd">+ Tulis jurnal</button><p class="note">Jurnal tersimpan polos (belum dienkripsi ujung-ke-ujung); di Drive ia berada di folder privat aplikasi milik akun Google Anda.</p>`;
-      } else {
-        const t = C.today(), hs = list('habit');
-        h += `<div class="card">${hs.length ? hs.map((x) => habitRow(x, t)).join('') : '<div class="empty">Belum ada kebiasaan.</div>'}</div><button class="btn" data-a="habitAdd">+ Kebiasaan</button>`;
-      }
-    } else h += vSettings();
-    return { title: 'Lainnya', sub: '', html: h };
-  }
+      return { title: 'Stok & belanja', sub: '', html: h, add: tab === 'stok' ? () => invForm() : null };
+    },
+    kontak() {
+      const cs = list('contact').sort((a, b) => C.cmp(!!b.emergency, !!a.emergency) || C.cmp(a.name, b.name));
+      return { title: 'Kontak penting', sub: '', add: () => contactForm(), html: `<div class="card">${cs.length ? cs.map((c) => `<div class="row">${ic(c.emergency ? 'c3' : 'c5', c.emergency ? '🚨' : '👤')}<div class="grow" data-a="contactEdit" data-id="${c.id}"><div class="t">${esc(c.name)}</div><div class="s">${esc(c.role || '')}</div></div>${c.phone ? `<a class="btn sm" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(c.phone)}</a>` : ''}</div>`).join('') : '<div class="empty">Belum ada kontak (tukang, dokter, RT, PLN…).</div>'}</div><button class="btn full" data-a="contactAdd">+ Kontak</button>` };
+    },
+    dokumen() {
+      const ds = list('doc').sort((a, b) => C.cmp(a.expiry || '9999', b.expiry || '9999'));
+      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<div class="card">${ds.length ? ds.map((d) => `<div class="row" data-a="docEdit" data-id="${d.id}">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div>`).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><p class="note">Hanya lokasi & masa berlaku. Jangan simpan nomor identitas di sini (belum terenkripsi ujung-ke-ujung).</p>` };
+    },
+    tugas() {
+      const t = C.today(), all = list('task'), f = ui.taskFilter;
+      const act = all.filter((x) => !x.done).sort(byDue), done = all.filter((x) => x.done).sort((a, b) => C.cmp(b.doneAt || '', a.doneAt || ''));
+      const shown = f === 'aktif' ? act : done;
+      return { title: 'Tugas', sub: act.length + ' aktif', add: () => taskForm(), html: seg('taskFilter', [['aktif', 'Aktif (' + act.length + ')'], ['selesai', 'Selesai (' + done.length + ')']], f) + `<div class="card">${shown.length ? shown.map((x) => taskRow(x, t)).join('') : `<div class="empty">${f === 'aktif' ? 'Belum ada tugas.' : 'Belum ada tugas selesai.'}</div>`}</div><button class="btn full" data-a="taskAdd">+ Tugas baru</button>` };
+    },
+    jurnal() {
+      const js = list('journal').sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
+      return { title: 'Jurnal', sub: '', add: () => journalForm(), html: `<div class="card">${js.length ? js.map((j) => `<div class="row" data-a="journalEdit" data-id="${j.id}"><div style="font-size:1.6rem">${MOODS[(+j.mood || 3) - 1]}</div><div class="grow"><div class="s">${fmtDate(j.date)}</div><div class="t" style="font-weight:500">${esc(j.text.length > 140 ? j.text.slice(0, 140) + '…' : j.text)}</div></div></div>`).join('') : '<div class="empty">Belum ada jurnal.</div>'}</div><button class="btn full" data-a="journalAdd">+ Tulis jurnal</button><p class="note">Jurnal tersimpan polos (belum dienkripsi ujung-ke-ujung); di Drive ia berada di folder privat aplikasi milik akun Google Anda.</p>` };
+    },
+    habit() {
+      const t = C.today(), hs = list('habit');
+      return { title: 'Kebiasaan', sub: '', add: () => habitForm(), html: `<div class="card">${hs.length ? hs.map((x) => habitRow(x, t)).join('') : '<div class="empty">Belum ada kebiasaan.</div>'}</div><button class="btn full" data-a="habitAdd">+ Kebiasaan</button>` };
+    },
+    setelan() { return { title: 'Sinkron & backup', sub: '', html: vSettings() }; },
+    bantuan() {
+      const demo = list('task').concat(list('plan')).some((x) => x.demo);
+      return { title: 'Bantuan', sub: '', html: `<div class="card pad"><div class="t">Pasang di layar utama HP</div><p class="s" style="margin:6px 0 0">Android (Chrome): menu ⋮ → <b>Tambahkan ke layar utama</b> / <b>Instal aplikasi</b>. iPhone (Safari): tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p></div>
+<div class="card pad"><div class="t">Data contoh</div><p class="s" style="margin:6px 0 10px">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja aplikasi. Bisa dihapus kapan saja tanpa menyentuh data asli Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}</div>
+<div class="card pad"><div class="t">Aturan yang dipegang</div><p class="s" style="margin:6px 0 0">Uang = bilangan bulat rupiah. Transaksi tidak dihapus, hanya di-void. Transfer bukan pemasukan/pengeluaran. Notifikasi berjudul generik.</p></div><p class="note">RUMAHKU-ONE Lite v0.2</p>` };
+    },
+  };
 
   function vSettings() {
     const last = cfg.lastSync ? new Date(cfg.lastSync).toLocaleString('id-ID') : 'belum pernah';
     const notif = 'Notification' in window ? Notification.permission : 'tidak didukung';
-    return `<h2>Sinkron Google Drive</h2><div class="card pad"><label class="f">Google OAuth Client ID<input id="cid" value="${esc(cfg.clientId || '')}" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off"></label>
+    return `<h2>Google Drive</h2><div class="card pad"><label class="f">Google OAuth Client ID<input id="cid" value="${esc(cfg.clientId || '')}" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off"></label>
 <div class="btns" style="margin-top:10px"><button class="btn alt" data-a="saveCid">Simpan ID</button><button class="btn" data-a="syncNow">${cfg.connected ? 'Sinkron sekarang' : 'Hubungkan &amp; sinkron'}</button></div>
 <p class="note">Status: ${esc(syncMsg || (cfg.connected ? 'terhubung' : 'belum terhubung'))} · terakhir sinkron: ${esc(last)}</p>
-<p class="note">Data disimpan di folder tersembunyi aplikasi di Drive Anda (bukan di file Drive biasa). Tanpa Client ID, data hanya di perangkat ini.</p></div>
+<p class="note">Data disimpan di folder tersembunyi aplikasi di Drive Anda. Tanpa Client ID, data hanya di perangkat ini.</p></div>
 <h2>Backup</h2><div class="card pad"><div class="btns"><button class="btn alt" data-a="export">Ekspor JSON</button><button class="btn alt" data-a="import">Impor / gabung JSON</button></div><input type="file" id="impf" accept="application/json,.json" hidden></div>
 <h2>Pengingat</h2><div class="card pad"><p class="note" style="margin-top:0">Notifikasi berjalan saat aplikasi terbuka (judul generik, tanpa isi). Pengingat saat aplikasi tertutup butuh server/Google Calendar (rencana berikutnya).</p><button class="btn alt" data-a="notif">Izinkan notifikasi (status: ${esc(notif)})</button></div>
-<h2>Data</h2><div class="card pad"><button class="btn bad" data-a="wipe">Hapus data di perangkat ini</button><p class="note">Salinan di Drive (jika terhubung) tidak ikut terhapus.</p></div>
-<p class="note">RUMAHKU-ONE Lite v0.1 · ${list('task').length} tugas · ${list('tx').length} transaksi</p>`;
+<h2>Data</h2><div class="card pad"><button class="btn bad" data-a="wipe">Hapus data di perangkat ini</button><p class="note">Salinan di Drive (jika terhubung) tidak ikut terhapus.</p></div>`;
   }
 
-  const views = { today: vToday, tasks: vTasks, cal: vCal, money: vMoney, more: vMore };
+  // ---------- render & navigasi ----------
+  const views = { today: vToday, rumah: vRumah, money: vMoney, cal: vCal, more: vMore };
   function render() {
-    const v = views[ui.tab]();
-    document.getElementById('top').innerHTML = `<h1>${esc(v.title)}</h1>${v.sub ? `<p>${esc(v.sub)}</p>` : ''}`;
+    const pg = ui.stack.length ? ui.stack[ui.stack.length - 1] : null;
+    const v = pg ? pages[pg.n](pg.p) : views[ui.tab]();
+    if (pg && !v) { ui.stack.pop(); return render(); }
+    ui.addFn = v.add || null;
+    document.getElementById('top').innerHTML = `${pg ? '<button class="bk" data-a="back" aria-label="Kembali">‹</button>' : ''}<div class="tt"><h1>${esc(v.title)}</h1>${v.sub ? `<p>${esc(v.sub)}</p>` : ''}</div>${v.add ? '<button class="btn sm" data-a="pageAdd">+ Tambah</button>' : ''}`;
     const main = document.getElementById('main'), y = window.scrollY;
     main.innerHTML = v.html;
     window.scrollTo(0, y);
-    document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.v === ui.tab));
+    document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', !pg && b.dataset.v === ui.tab));
   }
+  function go(name, p) {
+    ui.stack.push({ n: name, p: p || {} });
+    try { history.pushState({ d: ui.stack.length }, ''); } catch (e) { /* abaikan */ }
+    window.scrollTo(0, 0); render();
+  }
+  function switchTab(v) {
+    const n = ui.stack.length; ui.tab = v; ui.stack = [];
+    if (n) { ignorePop = true; try { history.go(-n); } catch (e) { ignorePop = false; } }
+    window.scrollTo(0, 0); render();
+  }
+  window.addEventListener('popstate', () => {
+    if (ignorePop) { ignorePop = false; return; }
+    if (ui.stack.length) { ui.stack.pop(); render(); }
+  });
 
   // ---------- aksi ----------
-  const get = (type, id) => store.rec[id] && !store.rec[id]._d ? store.rec[id] : null;
   const A = {
-    tab(d) { ui.tab = d.v; window.scrollTo(0, 0); render(); },
+    tab(d) { switchTab(d.v); },
+    nav(d) { if (d.to.startsWith('tab:')) switchTab(d.to.slice(4)); else go(d.to); },
+    back() { try { history.back(); } catch (e) { ui.stack.pop(); render(); } },
+    pageAdd() { if (ui.addFn) ui.addFn(); },
+    set(d) { ui[d.k] = d.v; render(); },
     quick() {
       openMenu('Tambah cepat', [
         { label: '✅ Tugas', fn: () => taskForm() }, { label: '💸 Pengeluaran', fn: () => txForm('expense') }, { label: '💰 Pemasukan', fn: () => txForm('income') },
-        { label: '📅 Acara', fn: () => eventForm() }, { label: '🛒 Barang belanja', fn: () => { ui.tab = 'more'; ui.section = 'rumah'; ui.rumah = 'belanja'; render(); const i = document.querySelector('[name=n]'); if (i) i.focus(); } },
-        { label: '📓 Jurnal', fn: () => journalForm() },
+        { label: '📅 Acara', fn: () => eventForm() }, { label: '🔧 Rencana perawatan', fn: () => planForm() }, { label: '🧾 Tagihan rutin', fn: () => billForm() },
+        { label: '🛒 Barang belanja', fn: () => { ui.stokTab = 'belanja'; go('stok'); const i = document.querySelector('[name=n]'); if (i) i.focus(); } }, { label: '📓 Jurnal', fn: () => journalForm() },
       ]);
     },
     taskDone(d) { const t = get('task', d.id); if (!t) return; C.put(store, 'task', C.completeTask(t, C.today())); commit(); toast(t.repeat && t.repeat !== 'none' ? 'Selesai · jadwal berikutnya dimajukan' : 'Selesai ✓'); },
-    taskUndo(d) { const t = get('task', d.id); if (!t) return; C.put(store, 'task', { id: t.id, done: false, doneAt: '' }); commit(); },
+    taskUndo(d) { const t = get('task', d.id); if (t) { C.put(store, 'task', { id: t.id, done: false, doneAt: '' }); commit(); } },
     taskEdit(d) { taskForm(get('task', d.id)); }, taskAdd() { taskForm(); },
-    taskFilter(d) { ui.taskFilter = d.v; render(); },
-    calPrev() { ui.calMonth = ymShift(ui.calMonth, -1); ui.calSel = null; render(); },
-    calNext() { ui.calMonth = ymShift(ui.calMonth, 1); ui.calSel = null; render(); },
-    calSel(d) { ui.calSel = d.v; render(); },
-    evAdd() { eventForm(); }, evEdit(d) { eventForm(get('event', d.id), d.occ); },
+    calPrev() { ui.calMonth = ymShift(ui.calMonth, -1); ui.calSel = null; render(); }, calNext() { ui.calMonth = ymShift(ui.calMonth, 1); ui.calSel = null; render(); },
+    calSel(d) { ui.calSel = d.v; render(); }, evAdd() { eventForm(); }, evEdit(d) { eventForm(get('event', d.id), d.occ); },
     mPrev() { ui.moneyMonth = ymShift(ui.moneyMonth, -1); render(); }, mNext() { ui.moneyMonth = ymShift(ui.moneyMonth, 1); render(); },
-    txAdd() { txForm(); }, accAdd() { accForm(); }, accEdit(d) { accForm(get('acc', d.id)); },
-    budAdd() { budgetForm(); }, budEdit(d) { budgetForm(get('budget', d.id)); },
+    txAdd() { txForm(); }, accAdd() { accForm(); }, accEdit(d) { accForm(get('acc', d.id)); }, budAdd() { budgetForm(); }, budEdit(d) { budgetForm(get('budget', d.id)); },
     txVoid(d) { const t = get('tx', d.id); if (!t) return; confirmBox('Void transaksi ' + rp(t.amount) + '? Dianggap tidak ada, riwayat tetap tersimpan.', () => { C.put(store, 'tx', { id: t.id, void: true, voidAt: C.today() }); commit(); }); },
-    section(d) { ui.section = d.v; render(); }, sub(d) { ui[d.k] = d.v; render(); },
+    planAdd() { planForm(null, { group: ui.planGroup === 'semua' ? 'rumah' : ui.planGroup }); }, planTpl() { templateForm(); },
+    planOpen(d) { go('planDetail', { id: d.id }); }, planEdit(d) { planForm(get('plan', d.id)); }, planDone(d) { const p = get('plan', d.id); if (p) planDoneForm(p); },
+    vehAdd() { vehForm(); }, vehEdit(d) { vehForm(get('veh', d.id)); }, odoUpd(d) { odoForm(get('veh', d.id)); },
+    vehPlan(d) { planForm(null, { vehicleId: d.id, group: 'kendaraan', every: 6, unit: 'month' }); }, vehTpl(d) { templateForm(d.id); },
+    billAdd() { billForm(); }, billEdit(d) { billForm(get('bill', d.id)); }, billPay(d) { const b = get('bill', d.id); if (b) billPayForm(b); },
     assetAdd() { assetForm(); }, assetEdit(d) { assetForm(get('asset', d.id)); },
-    serviced(d) { const a = get('asset', d.id); if (!a) return; const t = C.today(); C.put(store, 'asset', { id: a.id, lastService: t, nextService: a.everyMonths ? C.addMonths(t, a.everyMonths) : '' }); commit(); toast(a.everyMonths ? 'Servis berikutnya dijadwalkan' : 'Ditandai sudah diservis'); },
+    invAdd() { invForm(); }, invEdit(d) { invForm(get('inv', d.id)); },
+    invInc(d) { const i = get('inv', d.id); if (i) { C.put(store, 'inv', { id: i.id, qty: (+i.qty || 0) + 1 }); commit(); } },
+    invDec(d) { const i = get('inv', d.id); if (i) { C.put(store, 'inv', { id: i.id, qty: Math.max(0, (+i.qty || 0) - 1) }); commit(); } },
+    invToShop() {
+      const have = new Set(list('shop').filter((x) => !x.done).map((x) => x.name.toLowerCase()));
+      let n = 0; C.lowStock(list('inv')).forEach((i) => { if (!have.has(i.name.toLowerCase())) { C.put(store, 'shop', { name: i.name, done: false }); n++; } });
+      commit(); toast(n ? n + ' barang masuk daftar belanja' : 'Sudah ada di daftar belanja');
+    },
     shopTog(d) { const x = get('shop', d.id); if (x) { C.put(store, 'shop', { id: x.id, done: !x.done }); commit(); } },
     shopClear() { list('shop').filter((x) => x.done).forEach((x) => C.remove(store, x.id)); commit(); },
-    contactAdd() { contactForm(); }, contactEdit(d) { contactForm(get('contact', d.id)); },
-    journalAdd() { journalForm(); }, journalEdit(d) { journalForm(get('journal', d.id)); },
-    habitAdd() { habitForm(); }, habitEdit(d) { habitForm(get('habit', d.id)); },
+    contactAdd() { contactForm(); }, contactEdit(d) { contactForm(get('contact', d.id)); }, docAdd() { docForm(); }, docEdit(d) { docForm(get('doc', d.id)); },
+    journalAdd() { journalForm(); }, journalEdit(d) { journalForm(get('journal', d.id)); }, habitAdd() { habitForm(); }, habitEdit(d) { habitForm(get('habit', d.id)); },
     habitTog(d) { const h = get('habit', d.id); if (!h) return; const t = C.today(), log = h.log || []; C.put(store, 'habit', { id: h.id, log: log.includes(t) ? log.filter((x) => x !== t) : log.concat([t]).slice(-400) }); commit(); },
     saveCid() { cfg.clientId = (document.getElementById('cid').value || '').trim(); cfg.connected = false; saveCfg(); syncMsg = ''; toast('Client ID disimpan'); render(); },
     syncNow() { const el = document.getElementById('cid'); if (el && el.value.trim() !== (cfg.clientId || '')) { cfg.clientId = el.value.trim(); cfg.connected = false; saveCfg(); } runSync(true); },
@@ -417,10 +720,54 @@
     import() { document.getElementById('impf').click(); },
     notif() { if (!('Notification' in window)) return toast('Browser tidak mendukung notifikasi'); Notification.requestPermission().then(() => render()); },
     wipe() { confirmBox('Hapus SEMUA data di perangkat ini? (Ekspor backup dulu bila perlu)', () => { store = C.emptyStore(); persist(); render(); toast('Data lokal dihapus'); }); },
+    demoOn() { demoOn(); }, demoOff() { demoOff(); },
   };
+
+  // ---------- data contoh (ditandai demo:true; dapat dihapus tanpa menyentuh data asli) ----------
+  function demoOn() {
+    const t = C.today(), D = (o) => Object.assign({ demo: true }, o), add = (n) => C.addDays(t, n);
+    const acc1 = C.put(store, 'acc', D({ name: 'Dompet', type: 'kas', opening: 500000 })), acc2 = C.put(store, 'acc', D({ name: 'BCA', type: 'bank', opening: 7500000 }));
+    C.put(store, 'tx', D({ kind: 'income', amount: 6000000, acc: acc2.id, to: '', cat: 'Gaji', date: t.slice(0, 7) + '-01', note: 'Gaji', cid: C.uid() }));
+    C.put(store, 'tx', D({ kind: 'expense', amount: 450000, acc: acc1.id, to: '', cat: 'Makan', date: t, note: 'Belanja pasar', cid: C.uid() }));
+    C.put(store, 'budget', D({ cat: 'Makan', limit: 1500000 }));
+    const veh = C.put(store, 'veh', D({ name: 'Honda Beat', kind: 'motor', plate: 'B 1234 XYZ', year: 2021, odometer: 24300, pajakDue: add(21), stnkDue: '' }));
+    C.put(store, 'plan', D({ name: 'Ganti oli', group: 'kendaraan', every: 2, unit: 'month', nextDue: add(12), vehicleId: veh.id, kmEvery: 2500, nextKm: 24600, cost: 60000 }));
+    C.put(store, 'plan', D({ name: 'Servis berkala', group: 'kendaraan', every: 6, unit: 'month', nextDue: add(94), vehicleId: veh.id, kmEvery: 10000, nextKm: 30000, cost: 250000 }));
+    C.put(store, 'plan', D({ name: 'Servis AC', group: 'rumah', every: 3, unit: 'month', nextDue: add(-4), cost: 150000, lastDone: add(-94) }));
+    C.put(store, 'plan', D({ name: 'Kuras toren air', group: 'rumah', every: 6, unit: 'month', nextDue: add(61) }));
+    C.put(store, 'plan', D({ name: 'Cek instalasi listrik & MCB', group: 'rumah', every: 12, unit: 'month', nextDue: add(200) }));
+    C.put(store, 'bill', D({ name: 'Listrik PLN', amountEst: 450000, dueDay: C.parseD(add(2)).getDate(), paidYM: ymShift(nowYM(), -1) }));
+    C.put(store, 'bill', D({ name: 'Internet', amountEst: 350000, dueDay: C.parseD(add(9)).getDate(), paidYM: ymShift(nowYM(), -1) }));
+    C.put(store, 'bill', D({ name: 'PDAM / air', amountEst: 120000, dueDay: 25, paidYM: ymShift(nowYM(), -1) }));
+    C.put(store, 'asset', D({ name: 'Kulkas 2 pintu', cat: 'Elektronik', price: 4200000, warrantyUntil: add(45), place: 'Dapur' }));
+    C.put(store, 'asset', D({ name: 'Mesin cuci', cat: 'Elektronik', price: 3100000, warrantyUntil: add(400), place: 'Area cuci' }));
+    C.put(store, 'inv', D({ name: 'Gas LPG 3kg', qty: 0, unit: 'tabung', min: 1, place: 'Dapur' }));
+    C.put(store, 'inv', D({ name: 'Beras', qty: 8, unit: 'kg', min: 3 }));
+    C.put(store, 'contact', D({ name: 'Pak Budi (tukang)', role: 'Tukang bangunan', phone: '0812 0000 0000' }));
+    C.put(store, 'contact', D({ name: 'Puskesmas', role: 'Darurat kesehatan', phone: '119', emergency: true }));
+    C.put(store, 'doc', D({ title: 'Polis asuransi rumah', expiry: add(75), place: 'Map biru, lemari kamar' }));
+    C.put(store, 'task', D({ title: 'Bayar iuran RT', due: t, repeat: 'monthly', anchorDay: C.parseD(t).getDate() }));
+    C.put(store, 'event', D({ title: 'Arisan keluarga', date: add(3), allDay: false, time: '16:00', repeat: 'monthly' }));
+    C.put(store, 'habit', D({ name: 'Jalan pagi', log: [add(-1), add(-2)] }));
+    commit(); toast('Data contoh ditambahkan');
+  }
+  function demoOff() {
+    const now = new Date().toISOString();
+    Object.keys(store.rec).forEach((id) => {
+      const r = store.rec[id];
+      // Data contoh bukan catatan keuangan nyata, jadi boleh dihapus (aturan "transaksi tak dihapus" untuk data asli).
+      if (r.demo && !r._d) store.rec[id] = { id, _t: r._t, _u: now, _d: true };
+    });
+    commit(); toast('Data contoh dihapus');
+  }
+
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-a]'); if (!t || !A[t.dataset.a]) return;
-    if (t.dataset.a === 'quick' || t.closest('dialog') == null) A[t.dataset.a](t.dataset, e);
+    if (t.closest('dialog') == null) A[t.dataset.a](t.dataset, e);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const t = e.target.closest && e.target.closest('.tile[data-a]'); if (t) { e.preventDefault(); A[t.dataset.a](t.dataset); }
   });
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('[data-form="shop"]'); if (!f) return;
@@ -473,7 +820,7 @@
   }
   async function runSync(interactive) {
     if (syncing) { syncAgain = true; return; }
-    syncing = true; syncMsg = 'menyinkronkan…'; if (ui.tab === 'more') render();
+    syncing = true; syncMsg = 'menyinkronkan…'; render();
     try {
       await getToken(interactive);
       const q = encodeURIComponent("name='rumahku.json' and 'appDataFolder' in parents and trashed=false");
@@ -493,7 +840,7 @@
       cfg.lastSync = Date.now(); saveCfg(); syncMsg = 'tersinkron ✓';
       if (interactive) toast('Tersinkron dengan Google Drive');
     } catch (e) {
-      syncMsg = 'gagal: ' + e.message; if (e.status === 401) { token = null; }
+      syncMsg = 'gagal: ' + e.message; if (e.status === 401) token = null;
       if (interactive) toast('Sinkron gagal: ' + e.message);
     } finally {
       syncing = false; render();
@@ -503,8 +850,7 @@
   function scheduleSync() {
     if (!cfg.connected || !cfg.clientId) return;
     clearTimeout(syncTimer);
-    // Otomatis hanya bila token masih berlaku (tanpa popup); selain itu tombol "Sinkron sekarang".
-    syncTimer = setTimeout(() => { if (token && Date.now() < tokenExp - 60000) runSync(false); else { syncMsg = 'perubahan belum disinkron (ketuk Sinkron sekarang)'; } }, 4000);
+    syncTimer = setTimeout(() => { if (token && Date.now() < tokenExp - 60000) runSync(false); else syncMsg = 'perubahan belum disinkron (ketuk Sinkron sekarang)'; }, 4000);
   }
 
   // ---------- pengingat (hanya saat aplikasi terbuka; judul generik) ----------
@@ -525,6 +871,6 @@
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('sw.js').catch(() => { /* PWA opsional */ });
   }
-  window.__rk = { store: () => store, C }; // untuk uji
+  window.__rk = { store: () => store, C };
   render(); tick();
 })();

@@ -165,6 +165,77 @@
     return assets.filter((a) => a.nextService && a.nextService <= todayS);
   }
 
+
+  // ---------- Rumah: hitung mundur, perawatan, tagihan, stok ----------
+  function daysBetween(a, b) { return Math.round((parseD(b) - parseD(a)) / 86400000); }
+  function countdown(n) {
+    if (n < 0) return 'Terlambat ' + -n + ' hari';
+    if (n === 0) return 'Hari ini';
+    if (n === 1) return 'Besok';
+    if (n <= 60) return n + ' hari lagi';
+    return Math.round(n / 30) + ' bulan lagi';
+  }
+  function urgency(n, soon) { return n < 0 ? 'late' : n <= (soon == null ? 7 : soon) ? 'soon' : 'ok'; }
+  function intervalLabel(p) {
+    const e = p.every;
+    if (p.unit === 'day') return e % 7 === 0 ? (e === 7 ? 'tiap minggu' : 'tiap ' + e / 7 + ' minggu') : 'tiap ' + e + ' hari';
+    return e % 12 === 0 ? (e === 12 ? 'tiap tahun' : 'tiap ' + e / 12 + ' tahun') : (e === 1 ? 'tiap bulan' : 'tiap ' + e + ' bulan');
+  }
+  // Jadwal dihitung dari tanggal SELESAI (mode after_completion), bukan dari jatuh tempo lama.
+  function planNext(p, doneS) {
+    const e = Math.max(1, +p.every || 1);
+    return p.unit === 'day' ? addDays(doneS, e) : addMonths(doneS, e, parseD(doneS).getDate());
+  }
+  function completePlan(p, doneS) {
+    return { lastDone: doneS, nextDue: planNext(p, doneS) };
+  }
+  function dueInMonth(ym, day) {
+    const y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+    return ym + '-' + pad(Math.min(Math.max(1, +day || 1), daysInMonth(y, m - 1)));
+  }
+  // Tanggal tagihan berikutnya yang BELUM dibayar. paidYM = periode bulan terakhir yang sudah dibayar.
+  function billNext(b, todayS) {
+    let ym = todayS.slice(0, 7), due = dueInMonth(ym, b.dueDay), g = 0;
+    while (b.paidYM && due.slice(0, 7) <= b.paidYM && g++ < 36) {
+      ym = addMonths(ym + '-01', 1, 1).slice(0, 7);
+      due = dueInMonth(ym, b.dueDay);
+    }
+    return due;
+  }
+  // Sisa km sampai perawatan berikut (null bila rencana tidak berbasis km atau odometer belum diisi).
+  function kmLeft(p, odo) { return p.nextKm && odo != null && odo !== '' ? p.nextKm - Number(odo) : null; }
+  function lowStock(items) { return items.filter((i) => +i.min > 0 && +i.qty <= +i.min); }
+
+  // Semua hal rumah yang butuh perhatian, terurut: terlambat dulu, lalu paling dekat.
+  function homeAttention(store, todayS) {
+    const L = (t) => list(store, t), out = [];
+    const push = (kind, icon, text, date, go, soon) => {
+      const n = daysBetween(todayS, date);
+      if (n <= soon) out.push({ kind, icon, text, date, n, level: urgency(n, 7), go });
+    };
+    const vehs = {}; L('veh').forEach((v) => { vehs[v.id] = v; });
+    L('plan').forEach((p) => {
+      const ic = p.group === 'kendaraan' ? '🚗' : p.group === 'elektronik' ? '🔌' : '🔧';
+      const vn = p.vehicleId && vehs[p.vehicleId] ? ' (' + vehs[p.vehicleId].name + ')' : '';
+      if (p.nextDue) push('plan', ic, p.name + vn, p.nextDue, p.vehicleId ? 'kendaraan' : 'perawatan', 14);
+      const left = kmLeft(p, p.vehicleId && vehs[p.vehicleId] ? vehs[p.vehicleId].odometer : null);
+      if (left != null && left <= 500) out.push({ kind: 'plankm', icon: ic, text: p.name + vn + (left <= 0 ? ' lewat ' + -left + ' km' : ' ' + left + ' km lagi'), date: todayS, n: left <= 0 ? -1 : 0, level: left <= 0 ? 'late' : 'soon', go: 'kendaraan' });
+    });
+    L('veh').forEach((v) => {
+      if (v.pajakDue) push('pajak', '🚗', 'Pajak ' + v.name, v.pajakDue, 'kendaraan', 30);
+      if (v.stnkDue) push('stnk', '🪪', 'STNK ' + v.name, v.stnkDue, 'kendaraan', 30);
+    });
+    L('bill').forEach((b) => push('bill', '🧾', 'Tagihan ' + b.name, billNext(b, todayS), 'tagihan', 7));
+    L('asset').forEach((a) => {
+      if (a.warrantyUntil && a.warrantyUntil >= todayS) push('warranty', '🛡️', 'Garansi ' + a.name + ' berakhir', a.warrantyUntil, 'aset', 30);
+    });
+    L('doc').forEach((d) => d.expiry && push('doc', '📄', d.title + ' kedaluwarsa', d.expiry, 'dokumen', 60));
+    L('inv').forEach((i) => i.expiry && push('invexp', '🥫', i.name + ' kedaluwarsa', i.expiry, 'stok', 14));
+    const low = lowStock(L('inv'));
+    low.forEach((i) => out.push({ kind: 'low', icon: '📦', text: i.name + ' hampir habis', date: todayS, n: 0, level: 'soon', go: 'stok' }));
+    return out.sort((a, b) => a.n - b.n);
+  }
+
   // ---------- penyimpanan & sinkron ----------
   // Store = { v:1, rec:{ [id]: {_t:tipe, _u:ISO-waktu-ubah, _d:true bila dihapus, ...data} } }
   function emptyStore() { return { v: 1, rec: {} }; }
@@ -207,6 +278,7 @@
     uid, dstr, today, parseD, addDays, addMonths, nextDate, cmp,
     completeTask, expandEvent, fmtIDR, parseAmount, liveTx, balances, netWorth,
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
+    kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
   };
 });
