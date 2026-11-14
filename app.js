@@ -30,7 +30,9 @@
   let store = readJSON(LS);
   if (!C.validStore(store)) store = C.emptyStore();
   let cfg = readJSON(CFG) || {};
-  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, cardCat: null, cardShift: 0 };
+  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, afCat: 'Semua', cardCat: null, cardShift: 0 };
+  let persistMsg = 'memeriksa…';
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((g) => { persistMsg = g ? 'aktif ✓' : 'belum diberikan browser'; }).catch(() => { persistMsg = 'tidak tersedia'; }); else persistMsg = 'tidak didukung';
   let syncMsg = '', syncing = false, syncAgain = false, syncTimer = null, ignorePop = false;
 
   function persist() { try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) { toast('Penyimpanan penuh/tidak tersedia: ekspor backup sekarang'); } }
@@ -313,6 +315,44 @@
       commit(); toast(n + ' tagihan ditambahkan; isi nominal & tanggal asli lewat ketuk nama tagihan');
     });
   }
+  // ---------- template cepat untuk semua modul (centang, tambah; semuanya bisa diubah lagi) ----------
+  function pickTemplates(title, items, labelFn, makeFn, note, extraFields, extraInit) {
+    const fields = items.map((t, i) => ({ k: 't' + i, label: labelFn(t), type: 'check' })).concat(extraFields || []);
+    openForm(title, fields, extraInit || {}, (v) => {
+      let n = 0; const err = items.reduce((e, t, i) => { if (e || !v['t' + i]) return e; n++; const r = makeFn(t, v); return typeof r === 'string' ? r : e; }, '');
+      if (err) return err;
+      if (!n) return 'Centang minimal satu.';
+      commit(); toast(n + ' ditambahkan. Ketuk item untuk mengisi data aslinya.');
+    }, null, note);
+  }
+  const TPL = {
+    veh: [{ name: 'Motor', kind: 'motor' }, { name: 'Mobil', kind: 'mobil' }],
+    asset: [['Kulkas', 'Elektronik'], ['Mesin cuci', 'Elektronik'], ['AC', 'Elektronik'], ['TV', 'Elektronik'], ['Laptop', 'Elektronik'], ['HP keluarga', 'Elektronik'], ['Rice cooker', 'Elektronik'], ['Dispenser air', 'Elektronik'], ['Water heater', 'Elektronik'], ['Kompor', 'Elektronik'], ['Sofa', 'Perabot'], ['Kasur', 'Perabot'], ['Lemari', 'Perabot'], ['Meja makan', 'Perabot'], ['Atap/genteng', 'Bangunan'], ['Pagar', 'Bangunan']],
+    inv: [['Beras', 'kg', 2], ['Gas LPG 3 kg', 'tabung', 1], ['Galon air minum', 'galon', 1], ['Minyak goreng', 'liter', 1], ['Telur', 'kg', 1], ['Gula', 'kg', 1], ['Garam', 'bungkus', 1], ['Sabun mandi', 'pcs', 2], ['Sabun cuci piring', 'pcs', 1], ['Deterjen', 'pcs', 1], ['Tisu', 'pak', 2], ['Obat P3K (plester, antiseptik)', 'set', 1], ['Obat demam', 'strip', 1], ['Lampu cadangan', 'pcs', 1]],
+    contact: [['Polisi', 'Darurat', '110', true], ['Ambulans', 'Darurat', '118', true], ['Pemadam kebakaran', 'Darurat', '113', true], ['SAR / Basarnas', 'Darurat', '115', true], ['Nomor darurat umum', 'Darurat', '112', true], ['PLN (gangguan listrik)', 'Layanan', '123', false], ['Ketua RT', 'Lingkungan', '', false], ['Satpam / keamanan', 'Lingkungan', '', false], ['Tukang listrik', 'Tukang', '', false], ['Tukang ledeng', 'Tukang', '', false], ['Tukang AC', 'Tukang', '', false], ['Dokter keluarga', 'Kesehatan', '', false], ['Bengkel langganan', 'Kendaraan', '', false], ['Sekolah anak', 'Keluarga', '', false]],
+    doc: ['Kartu Keluarga', 'Sertifikat rumah (SHM/HGB)', 'PBB (bukti bayar tahunan)', 'Polis asuransi', 'BPKB kendaraan', 'Buku nikah', 'Akta kelahiran anak', 'Ijazah', 'Paspor', 'Surat wasiat / dokumen waris', 'Kartu BPJS', 'Kontrak kerja'],
+    acc: [['Dompet', 'kas'], ['Rekening bank utama', 'bank'], ['Tabungan darurat', 'bank'], ['E-wallet (GoPay/OVO/DANA)', 'ewallet'], ['Kartu kredit', 'kartu'], ['Investasi (saham/reksa dana)', 'invest']],
+    habit: ['Olahraga 30 menit', 'Baca buku', 'Tidur sebelum jam 10 malam', 'Jalan pagi', 'Tanpa gula/minuman manis', 'Tulis syukur hari ini', 'Waktu berkualitas dengan keluarga'],
+    task: [['Belanja bulanan', 'monthly', 'Rumah'], ['Bersih-bersih rumah', 'weekly', 'Rumah'], ['Ganti sprei', 'weekly', 'Rumah'], ['Cek tabung gas & galon', 'monthly', 'Rumah'], ['Review keuangan bulanan', 'monthly', 'Pribadi'], ['Laporan kerja mingguan', 'weekly', 'Pekerjaan'], ['Backup data penting', 'monthly', 'Pribadi'], ['Telepon orang tua', 'weekly', 'Keluarga']],
+  };
+  const tplForms = {
+    veh() {
+      pickTemplates('Tambah kendaraan', TPL.veh, (t) => t.name + ' (lengkap dengan jadwal servis standar)', (t) => {
+        const v = C.put(store, 'veh', { name: t.name, kind: t.kind, plate: '', odometer: '' });
+        VEH_TEMPLATES.forEach((tp) => C.put(store, 'plan', { name: tp.name, group: 'kendaraan', every: tp.every, unit: tp.unit, nextDue: C.planNext(tp, C.today()), vehicleId: v.id, kmEvery: tp.kmEvery || 0, nextKm: 0, cost: 0 }));
+      }, 'Isi plat, odometer, pajak, dan STNK dengan mengetuk nama kendaraan. Jadwal servis ikut dibuat dari hari ini.');
+    },
+    asset() { pickTemplates('Pilih aset', TPL.asset, (t) => t[0] + ' · ' + t[1], (t) => C.put(store, 'asset', { name: t[0], cat: t[1], price: 0 }), 'Isi tanggal beli, harga, dan garansi setelahnya.'); },
+    inv() { pickTemplates('Pilih barang stok', TPL.inv, (t) => t[0] + ' (min ' + t[2] + ' ' + t[1] + ')', (t) => C.put(store, 'inv', { name: t[0], qty: 0, unit: t[1], min: t[2] }), 'Jumlah awal 0; atur stok sebenarnya dengan tombol + / −.'); },
+    contact() { pickTemplates('Pilih kontak', TPL.contact, (t) => t[0] + (t[2] ? ' · ' + t[2] : ''), (t) => C.put(store, 'contact', { name: t[0], role: t[1], phone: t[2], emergency: t[3] }), 'Nomor darurat Indonesia sudah terisi. Kontak tanpa nomor: isi sendiri.'); },
+    doc() { pickTemplates('Pilih dokumen', TPL.doc, (t) => t, (t) => C.put(store, 'doc', { title: t, expiry: '', place: '' }), 'Isi lokasi simpan dan masa berlaku setelah ditambahkan.'); },
+    acc() { pickTemplates('Pilih akun', TPL.acc, (t) => t[0], (t) => C.put(store, 'acc', { name: t[0], type: t[1], opening: 0 }), 'Saldo awal 0. Ketuk akun untuk mengisi saldo sebenarnya.'); },
+    habit() { pickTemplates('Pilih kebiasaan', TPL.habit, (t) => t, (t) => C.put(store, 'habit', { name: t, log: [] })); },
+    task() { pickTemplates('Pilih tugas berulang', TPL.task, (t) => t[0] + ' · ' + (t[1] === 'weekly' ? 'tiap minggu' : 'tiap bulan'), (t, v) => { C.put(store, 'task', { title: t[0], due: C.today(), repeat: t[1], label: t[2], anchorDay: C.parseD(C.today()).getDate(), done: false, prio: '0' }); }, 'Tenggat pertama hari ini; ubah lewat ketuk tugas.'); },
+    budget() {
+      pickTemplates('Pilih kategori anggaran', EXP_CATS, (t) => t, (t, v) => { const n = C.parseAmount(v.limit); if (n == null || n <= 0) return 'Batas harus bilangan bulat rupiah > 0.'; C.put(store, 'budget', { cat: t, limit: n }); }, 'Batas sama untuk semua yang dicentang; ubah per kategori setelahnya.', [{ k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true }], { limit: '500.000' });
+    },
+  };
   // --- Rumah: aset, stok, kontak, dokumen ---
   function assetForm(a) {
     a = a || {};
@@ -380,35 +420,60 @@
     { name: 'Kabari keluarga', emoji: '💌', target: 1, unit: 'kabar', from: '12:30', to: '', everyMin: 0, days: [] },
     { name: 'Baca buku 15 menit', emoji: '📖', target: 1, unit: 'sesi', from: '20:30', to: '', everyMin: 0, days: [] },
   ];
+  // Draf kabar: bahasa sehari-hari yang hangat (bukan baku). {nama}=panggilan penerima, {saya}=nama Anda, {sebutan}=sebutan Anda untuk anak.
   const DRAFTS = {
     pasangan: [
-      'Sayang, aku sudah di jalan pulang ya. Mau dibawakan sesuatu, {nama}? 😊',
-      'Hari ini lagi padat, tapi kamu tetap yang pertama kuingat. Nanti kutelepon begitu longgar ya ❤️',
-      'Sudah makan siang belum, {nama}? Jangan telat makan ya, aku peduli sama kamu.',
-      'Terima kasih sudah mengurus rumah dan keluarga kita dengan sabar. Aku bersyukur punya kamu.',
-      'Semangat hari ini, {nama}. Kamu hebat. Kalau capek, ingat ada aku di sini.',
-      'Maaf, hari ini aku pulang agak malam. Kamu istirahat duluan, jangan menungguku ya.',
-      'Malam ini ngobrol berdua yuk, tanpa HP. Aku kangen ceritamu.',
-      'Selamat istirahat, {nama}. Terima kasih untuk hari ini. Sampai besok ❤️',
+      ['Pagi', 'Pagi sayang ❤️ Udah bangun belum? Semoga hari ini lancar ya. Jangan lupa sarapan, aku sayang kamu.'],
+      ['Pagi', 'Selamat pagi, {nama}. Semalem mimpiin aku nggak? 😄 Semangat ya hari ini, aku di sini terus buat kamu.'],
+      ['Siang', 'Udah makan siang belum, sayang? Jangan telat makan ya, nanti sakit. Aku khawatir loh.'],
+      ['Siang', 'Lagi ngapain, {nama}? Tiba-tiba kepikiran kamu, jadi pengen nyapa aja. Muach 😘'],
+      ['Sore', 'Aku udah otw pulang ya yang. Mau dibawain apa? Bilang aja, nanti aku mampir.'],
+      ['Sore', 'Bentar lagi sampai rumah nih. Siap-siap ya, aku bawa kangen seharian 😁'],
+      ['Malam', 'Selamat tidur sayang. Makasih ya buat hari ini. Mimpi indah, besok kita ketemu lagi ❤️'],
+      ['Malam', 'Capek ya hari ini? Istirahat gih, biar aku yang beresin sisanya. Sini peluk dulu 🤗'],
+      ['Malam', 'Malam ini ngobrol berdua yuk, tanpa HP. Aku kangen dengerin cerita kamu.'],
+      ['Kangen', 'Kangen banget sama kamu. Pengen cepet-cepet pulang terus peluk kamu erat-erat.'],
+      ['Kangen', 'Hari ini rasanya lama banget nggak ketemu kamu. Aku kangen, sayang.'],
+      ['Kangen', 'Tiap lihat hal lucu, aku pasti langsung kepikiran kamu. Kamu tuh bikin hariku lengkap.'],
+      ['Maaf', 'Maaf ya yang, tadi aku kebawa emosi. Aku nggak bermaksud nyakitin kamu. Kita ngobrol baik-baik yuk, aku sayang kamu.'],
+      ['Maaf', 'Maaf hari ini aku pulang telat lagi. Makasih ya udah sabar nungguin aku. Besok aku ganti waktunya buat kamu ❤️'],
+      ['Terima kasih', 'Makasih ya sayang udah ngurusin rumah dan keluarga kita dengan sabar. Aku bersyukur banget punya kamu.'],
+      ['Terima kasih', 'Makasih udah selalu ada, pas aku lagi seneng maupun lagi capek. Buat aku, kamu itu rumah.'],
+      ['Semangat', 'Semangat ya sayang! Kamu hebat banget, aku bangga sama kamu. Kalau capek, inget ada aku di sini.'],
+      ['Semangat', 'Apa pun yang terjadi hari ini, kita hadapi bareng ya. Aku selalu di pihak kamu.'],
+      ['Kabar', 'Hari ini aku lagi padet banget, tapi kamu tetap yang pertama kuingat. Nanti aku telepon ya begitu longgar ❤️'],
+      ['Kabar', 'Aku baik-baik aja ya, jangan khawatir. Kamu sama anak-anak di rumah gimana?'],
+      ['Romantis', 'Aku jatuh cinta sama kamu lagi hari ini. Nggak tau kenapa, tapi rasanya masih sama kayak dulu.'],
+      ['Romantis', 'Makasih udah milih aku jadi teman hidup kamu. Aku janji bakal terus berusaha jadi yang terbaik buat kamu.'],
+      ['Romantis', 'Weekend ini kita jalan berdua yuk, kayak pacaran dulu. Kamu yang pilih tempatnya, aku yang traktir 😘'],
+      ['Spesial', 'Selamat ulang tahun, sayangku! 🎂 Semoga panjang umur, sehat terus, dan semua mimpimu kesampaian. Aku sayang kamu banget.'],
+      ['Spesial', 'Selamat anniversary, yang! Makasih udah bertahan dan tumbuh bareng aku sampai sekarang. Cintaku nggak pernah berkurang ❤️'],
     ],
     anak: [
-      'Hai {nama}, {sebutan} kangen. Hari ini sekolahnya seru? Nanti cerita ya.',
-      'Jangan lupa makan dan minum air putih ya, {nama}. {sebutan} sayang kamu.',
-      '{nama}, {sebutan} bangga sama usahamu hari ini, apa pun hasilnya.',
-      'Semangat ya, {nama}! Kamu sudah belajar, tinggal percaya diri.',
-      '{sebutan} pulang agak telat. Kerjakan PR dan sikat gigi dulu ya, {nama}.',
-      'Selamat tidur, {nama}. Mimpi indah ya. {sebutan} sayang kamu.',
+      ['Pagi', 'Pagi, {nama}! {sebutan} sayang kamu. Semangat sekolahnya ya, jangan lupa sarapan sama bawa bekal.'],
+      ['Siang', 'Udah makan belum, nak? Minum air putih yang banyak ya. {sebutan} kangen nih.'],
+      ['Siang', 'Hari ini sekolahnya gimana? Nanti cerita ya ke {sebutan}, pengen denger semuanya.'],
+      ['Semangat', '{nama}, {sebutan} bangga banget sama usaha kamu hari ini, apa pun hasilnya. Kamu hebat!'],
+      ['Semangat', 'Semangat ya ujiannya! Yang penting udah belajar dan berdoa. Tenang aja, {sebutan} percaya sama kamu 💪'],
+      ['Malam', '{sebutan} pulang agak telat ya. PR-nya dikerjain dulu, terus sikat gigi sebelum tidur ya sayang.'],
+      ['Malam', 'Selamat tidur, {nama}. Mimpi indah ya. {sebutan} sayang kamu banget, besok kita main lagi.'],
+      ['Maaf', 'Maaf ya nak, tadi {sebutan} sempat marah. {sebutan} sayang banget sama {nama}. Peluk dulu yuk 🤗'],
+      ['Ajak', 'Weekend ini mau ke mana, {nama}? Kamu yang pilih, kita jalan bareng sekeluarga ya.'],
+      ['Spesial', 'Selamat ulang tahun, {nama}! 🎉 Makin pinter, makin baik, makin sehat ya. {sebutan} sayang kamu selalu.'],
     ],
     ortu: [
-      'Apa kabar, {nama}? Semoga sehat selalu. Aku kangen, akhir pekan ini aku telepon ya.',
-      'Terima kasih atas doa dan didikan {nama} selama ini. Aku selalu ingat.',
-      'Sudah makan dan minum obat, {nama}? Jaga kesehatan ya, kabari kalau butuh apa-apa.',
-      'Kami di sini sehat semua, {nama}. Jangan khawatir ya. Salam dari kami semua.',
+      ['Kabar', 'Apa kabar, {nama}? Semoga sehat-sehat terus ya. Aku kangen, nanti malam aku telepon ya.'],
+      ['Kabar', 'Kami di sini sehat semua kok, {nama}, jangan khawatir. Salam dari kami semua, cucu-cucunya juga kangen.'],
+      ['Perhatian', '{nama} udah makan sama minum obat belum? Jaga kesehatan ya, kalau butuh apa-apa kabarin aku.'],
+      ['Terima kasih', 'Makasih ya {nama} udah selalu doain dan sayang sama kami. Aku nggak bakal lupa semuanya.'],
+      ['Ajak', 'Minggu ini aku mau mampir ya. {nama} mau dibawain apa? Bilang aja.'],
+      ['Spesial', 'Selamat ulang tahun, {nama}. Semoga sehat, panjang umur, dan selalu bahagia. Aku sayang {nama}.'],
     ],
     umum: [
-      'Halo {nama}, apa kabar? Sudah lama kita tidak ngobrol, semoga sehat dan lancar selalu.',
-      'Terima kasih atas bantuannya, {nama}. Sangat berarti buatku.',
-      'Kapan-kapan kita ketemu ya, {nama}. Aku kangen ngobrol.',
+      ['Kabar', 'Halo {nama}, apa kabar? Udah lama kita nggak ngobrol, semoga sehat dan lancar terus ya.'],
+      ['Terima kasih', 'Makasih banyak ya {nama} bantuannya. Berarti banget buat aku.'],
+      ['Ajak', 'Kapan-kapan ketemuan yuk, {nama}. Aku kangen ngobrol.'],
+      ['Spesial', 'Selamat ulang tahun, {nama}! Sehat terus dan makin sukses ya 🎉'],
     ],
   };
   const CARDS = {
@@ -427,9 +492,9 @@
   function profilForm() {
     const p = profile();
     openForm('Profil saya', [
-      { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Nama panggilan (dipakai di sapaan)' },
+      { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Nama panggilan (dipakai di sapaan)' }, { k: 'birth', label: 'Tanggal lahir saya (muncul di kalender)', type: 'date' },
       { k: 'callKid', label: 'Sebutan Anda untuk anak (mis. Papa, Ayah, Bunda)' },
-    ], { name: p.name, nick: p.nick, callKid: p.callKid || '' }, (v) => { C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, callKid: v.callKid }); commit(); toast('Profil disimpan'); },
+    ], { name: p.name, nick: p.nick, birth: p.birth || '', callKid: p.callKid || '' }, (v) => { C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, birth: v.birth, callKid: v.callKid }); commit(); toast('Profil disimpan'); },
     null, 'Nama ini dipakai untuk sapaan "Selamat pagi, …" dan draf kabar. Tersimpan di perangkat Anda (dan di Drive bila sinkron aktif).');
   }
 
@@ -596,8 +661,8 @@
   }
   function waLink(phone, text) { const n = C.waNumber(phone); return 'https://wa.me/' + (n || '') + '?text=' + encodeURIComponent(text); }
   function afDrafts(p) {
-    const g = relGroup(p.rel), custom = list('draft').filter((d) => d.grp === g).map((d) => ({ text: d.text, id: d.id }));
-    return DRAFTS[g].map((x) => ({ text: x })).concat(custom);
+    const g = relGroup(p.rel), custom = list('draft').filter((d) => d.grp === g).map((d) => ({ text: d.text, id: d.id, cat: 'Punyaku' }));
+    return DRAFTS[g].map((x) => ({ cat: x[0], text: x[1] })).concat(custom);
   }
   async function afSend(how, pid, i) {
     const p = get('person', pid); if (!p) return; const d = afDrafts(p)[+i]; if (!d) return;
@@ -703,7 +768,7 @@
     if (bad.length) bad.forEach((b) => rows.push(['c6', b.level === 'over' ? '🚨' : '⚠️', 'Anggaran ' + esc(b.cat) + ' ' + b.pct + '%', 'tab:money']));
     else if (bs.length) rows.push(['c2', '✅', 'Budget masih aman', 'tab:money']);
     C.homeAttention(store, t).slice(0, 5).forEach((a) => rows.push([a.level === 'late' ? 'c3' : 'c1', a.icon, esc(a.text) + (a.kind === 'plankm' || a.kind === 'low' ? '' : ' — ' + C.countdown(a.n)), a.go]));
-    list('person').forEach((p) => { if (!p.birth) return; const n = C.daysBetween(t, nextBirthday(p.birth, t)); if (n <= 7) rows.push(['c6', '🎂', 'Ulang tahun ' + esc(p.nick || p.name) + (n === 0 ? ' hari ini' : ' — ' + n + ' hari lagi'), 'keluarga']); });
+    C.calendarItems(store, t, C.addDays(t, 8)).filter((x) => x.kind === 'birthday').forEach((x) => rows.push(['c6', '🎂', esc(x.title) + (x.date === t ? ' hari ini' : ' — ' + C.daysBetween(t, x.date) + ' hari lagi'), 'tab:cal']));
     const hp = list('habit').filter((h) => !(h.log || []).includes(t)).length;
     if (hp) rows.push(['c5', '🌱', hp + ' kebiasaan belum dicentang', 'habit']);
     return rows;
@@ -718,6 +783,7 @@
     const tasks = list('task').filter((x) => !x.done && x.due && x.due <= t).sort(byDue);
     const rts = list('rt').filter((r) => !r.paused && C.routineActiveOn(r, t)).sort((a, b) => C.cmp(a.from || '', b.from || ''));
     let h = `<div class="card" style="padding:0;overflow:hidden">${HOUSE_SVG}</div>${ownerName() ? '' : '<div class="card pad" data-a="profilEdit" style="cursor:pointer"><div class="t">👋 Siapa nama Anda?</div><div class="s">Ketuk untuk mengisi, supaya sapaan jadi personal.</div></div>'}<div class="card hero pad" data-a="tab" data-v="money" style="cursor:pointer"><div class="s">Kekayaan bersih</div><div class="big">${accs.length ? rp(nw) : 'Mulai catat uang'}</div><div class="s">${accs.length ? 'Bulan ini +' + rp(rep.income) + ' · −' + rp(rep.expense) : 'Ketuk untuk menambah akun pertama'}</div></div>`;
+    if (!list('rt').length) h += '<div class="card pad" data-a="nav" data-to="harian" style="cursor:pointer"><div class="t">💧 Atur target minum air &amp; rutinitas harian</div><div class="s">Ketuk, lalu pilih template "Minum air 2 liter" (8 gelas, diingatkan tiap jam).</div></div>';
     if (rts.length) h += `<h2>Rutinitas hari ini</h2>${rts.slice(0, 4).map((r) => rtCard(r)).join('')}${rts.length > 4 ? `<button class="btn alt full" data-a="nav" data-to="harian">Lihat semua (${rts.length})</button>` : ''}`;
     h += `<h2>Hari ini</h2><div class="card">${items.length ? items.map((r) => `<div class="hr" data-a="nav" data-to="${r[3]}">${ic(r[0], r[1])}<div class="grow t" style="font-weight:600">${r[2]}</div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada yang perlu diperhatikan. Mulai dengan tombol + atau isi data contoh di Lainnya → Bantuan.</div>'}</div>`;
     if (tasks.length) h += `<h2>Agenda tugas</h2><div class="card">${tasks.map((x) => taskRow(x, t)).join('')}</div>`;
@@ -746,21 +812,29 @@
     const ym = ui.calMonth, t = C.today();
     const first = C.parseD(ym + '-01'), lead = (first.getDay() + 6) % 7;
     const nDays = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(), next = ymShift(ym, 1) + '-01';
-    const evMap = {}, tkMap = {};
-    evOccurrences(ym + '-01', next).forEach((o) => { (evMap[o.date] = evMap[o.date] || []).push(o); });
-    list('task').filter((x) => !x.done && x.due).forEach((x) => { (tkMap[x.due] = tkMap[x.due] || []).push(x); });
+    const items = C.calendarItems(store, ym + '-01', next), by = {};
+    items.forEach((x) => { (by[x.date] = by[x.date] || []).push(x); });
+    const dotCls = { event: '', task: 't', birthday: 'b' };
     let cells = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((x) => `<div class="h">${x}</div>`).join('');
     for (let i = 0; i < lead; i++) cells += '<div class="day off"></div>';
     for (let d = 1; d <= nDays; d++) {
-      const ds = ym + '-' + String(d).padStart(2, '0');
-      cells += `<button class="day ${ds === t ? 'today' : ''} ${ds === ui.calSel ? 'sel' : ''}" data-a="calSel" data-v="${ds}" aria-label="${fmtDate(ds)}">${d}<div class="dots">${evMap[ds] ? '<i></i>' : ''}${tkMap[ds] ? '<i class="t"></i>' : ''}</div></button>`;
+      const ds = ym + '-' + String(d).padStart(2, '0'), kinds = Array.from(new Set((by[ds] || []).map((x) => (x.kind in dotCls ? x.kind : 'other')))).slice(0, 4);
+      cells += `<button class="day ${ds === t ? 'today' : ''} ${ds === ui.calSel ? 'sel' : ''}" data-a="calSel" data-v="${ds}" aria-label="${fmtDate(ds)}">${d}<div class="dots">${kinds.map((k) => `<i class="${k === 'other' ? 'o' : dotCls[k]}"></i>`).join('')}</div></button>`;
     }
-    let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="card pad"><div class="grid">${cells}</div></div>`;
+    let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="card pad"><div class="grid">${cells}</div></div><p class="note" style="margin:0 0 10px"><span class="lg"><i></i>acara</span> <span class="lg"><i class="t"></i>tugas</span> <span class="lg"><i class="b"></i>ulang tahun</span> <span class="lg"><i class="o"></i>tagihan, perawatan, pajak, garansi, dokumen</span></p>`;
     const sel = ui.calSel;
+    const row = (x) => {
+      if (x.kind === 'event') { const ev = get('event', x.id); return ev ? evRow({ ev, date: x.occ }) : ''; }
+      if (x.kind === 'task') { const tk = get('task', x.id); return tk ? taskRow(tk, t) : ''; }
+      return `<div class="row" data-a="nav" data-to="${x.go}" style="cursor:pointer">${ic(x.kind === 'birthday' ? 'c3' : 'c6', x.icon)}<div class="grow"><div class="t">${esc(x.title)}</div>${x.sub ? `<div class="s">${esc(x.sub)}</div>` : ''}</div><span class="chev">›</span></div>`;
+    };
     if (sel) {
-      const es = evOccurrences(sel, C.addDays(sel, 1)), ts = tkMap[sel] || [];
-      h += `<h2>${fmtDate(sel)}</h2><div class="card">${es.map(evRow).join('')}${ts.map((x) => taskRow(x, t)).join('')}${es.length + ts.length ? '' : '<div class="empty">Kosong.</div>'}</div><button class="btn full" data-a="evAdd">+ Acara di tanggal ini</button>`;
-    } else h += '<p class="note">Ketuk tanggal untuk melihat agenda. Titik hijau = acara, kuning = tugas.</p><button class="btn full" data-a="evAdd">+ Acara baru</button>';
+      const rows = (by[sel] || []).map(row).join('');
+      h += `<h2>${fmtDate(sel)}</h2><div class="card">${rows || '<div class="empty">Kosong.</div>'}</div><button class="btn full" data-a="evAdd">+ Acara di tanggal ini</button>`;
+    } else {
+      const up = items.filter((x) => x.date >= t).slice(0, 8);
+      h += `<h2>Bulan ini</h2><div class="card">${up.length ? up.map((x) => `<div class="row" data-a="calSel" data-v="${x.date}" style="cursor:pointer">${ic(x.kind === 'birthday' ? 'c3' : 'c6', x.icon)}<div class="grow"><div class="t">${esc(x.title)}</div><div class="s">${fmtDate(x.date)}${x.sub ? ' · ' + esc(x.sub) : ''}</div></div></div>`).join('') : '<div class="empty">Tidak ada agenda tersisa bulan ini. Ketuk tanggal untuk melihat detail.</div>'}</div><button class="btn full" data-a="evAdd">+ Acara baru</button>`;
+    }
     return { title: 'Kalender', sub: '', html: h };
   }
 
@@ -770,10 +844,10 @@
     const bal = C.balances(accs, txs), nw = C.netWorth(accs, txs), rep = C.monthReport(txs, ym), bud = C.budgetStatus(list('budget'), rep);
     const accName = (id) => (accs.find((a) => a.id === id) || { name: '?' }).name;
     let h = `<div class="card hero pad"><div class="s">Kekayaan bersih (semua akun)</div><div class="big">${rp(nw)}</div></div>`;
-    h += `<h2>Akun</h2><div class="card">${accs.length ? accs.map((a) => `<div class="row" data-a="accEdit" data-id="${a.id}">${ic('c2', a.type === 'bank' ? '🏦' : a.type === 'ewallet' ? '📱' : a.type === 'kartu' ? '💳' : a.type === 'invest' ? '📈' : '👛')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${esc(a.type)}</div></div><div class="${sgn(bal[a.id] || 0)}"><b>${rp(bal[a.id] || 0)}</b></div></div>`).join('') : '<div class="empty">Belum ada akun. Buat satu (mis. Dompet, BCA).</div>'}</div><button class="btn alt sm" data-a="accAdd">+ Akun</button><p class="note">Membayar kartu kredit = <b>transfer</b> dari akun bank ke akun kartu, bukan pengeluaran.</p>`;
+    h += `<h2>Akun</h2><div class="card">${accs.length ? accs.map((a) => `<div class="row" data-a="accEdit" data-id="${a.id}">${ic('c2', a.type === 'bank' ? '🏦' : a.type === 'ewallet' ? '📱' : a.type === 'kartu' ? '💳' : a.type === 'invest' ? '📈' : '👛')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${esc(a.type)}</div></div><div class="${sgn(bal[a.id] || 0)}"><b>${rp(bal[a.id] || 0)}</b></div></div>`).join('') : '<div class="empty">Belum ada akun. Buat satu (mis. Dompet, BCA).</div>'}</div><button class="btn alt sm" data-a="accAdd">+ Akun</button> <button class="btn alt sm" data-a="tpl" data-k="acc">✨ Template akun</button><p class="note">Membayar kartu kredit = <b>transfer</b> dari akun bank ke akun kartu, bukan pengeluaran.</p>`;
     h += `<div class="inl" style="justify-content:space-between;align-items:center;margin-top:14px"><button class="btn alt sm" data-a="mPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="mNext" aria-label="Bulan berikutnya">›</button></div>`;
     h += `<div class="card pad"><div class="row" style="border:0;padding:0"><div class="grow s">Pemasukan<div class="pos t">${rp(rep.income)}</div></div><div class="grow s">Pengeluaran<div class="neg t">${rp(rep.expense)}</div></div><div class="grow s">Selisih<div class="t ${sgn(rep.income - rep.expense)}">${rp(rep.income - rep.expense)}</div></div></div></div>`;
-    h += `<h2>Anggaran</h2><div class="card">${bud.length ? bud.map((b) => `<div class="row" data-a="budEdit" data-id="${b.id}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${esc(b.cat)}</span><span class="s">${rp(b.spent)} / ${rp(b.limit)} · ${b.pct}%</span></div><div class="bar"><i class="${b.level === 'ok' ? '' : b.level}" style="width:${Math.min(100, b.pct)}%"></i></div></div>`).join('') : '<div class="empty">Belum ada anggaran.</div>'}</div><button class="btn alt sm" data-a="budAdd">+ Anggaran</button>`;
+    h += `<h2>Anggaran</h2><div class="card">${bud.length ? bud.map((b) => `<div class="row" data-a="budEdit" data-id="${b.id}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${esc(b.cat)}</span><span class="s">${rp(b.spent)} / ${rp(b.limit)} · ${b.pct}%</span></div><div class="bar"><i class="${b.level === 'ok' ? '' : b.level}" style="width:${Math.min(100, b.pct)}%"></i></div></div>`).join('') : '<div class="empty">Belum ada anggaran.</div>'}</div><button class="btn alt sm" data-a="budAdd">+ Anggaran</button> <button class="btn alt sm" data-a="tpl" data-k="budget">✨ Template anggaran</button>`;
     const month = txs.filter((t) => t.date && t.date.slice(0, 7) === ym).sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
     h += `<h2>Transaksi</h2><div class="card">${month.length ? month.map((t) => {
       const lbl = t.kind === 'transfer' ? `${esc(accName(t.acc))} → ${esc(accName(t.to))}` : esc(t.cat || '') + ' · ' + esc(accName(t.acc));
@@ -827,7 +901,7 @@
         h += plans.length ? plans.map((p) => planCard(p)).join('') : '<p class="note">Belum ada rencana servis untuk kendaraan ini. Coba "Template" (ganti oli, servis berkala).</p>';
       });
       if (!vs.length) h = '<div class="card"><div class="empty">Belum ada kendaraan.<br>Tambahkan motor/mobil untuk melacak pajak, STNK, odometer, dan jadwal servis.</div></div>';
-      h += '<button class="btn full" data-a="vehAdd">+ Tambah kendaraan</button>';
+      h += '<button class="btn full" data-a="vehAdd">+ Tambah kendaraan</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="veh">✨ Tambah dari template: Motor / Mobil</button>';
       return { title: 'Kendaraan', sub: vs.length + ' kendaraan', html: h, add: () => vehForm() };
     },
     tagihan() {
@@ -844,7 +918,7 @@
       const cats = ['Semua'].concat(Object.keys(ASSET_EMOJI));
       const as = list('asset').filter((a) => ui.assetCat === 'Semua' || a.cat === ui.assetCat).sort((a, b) => C.cmp(a.name, b.name));
       let h = seg('assetCat', cats.map((c) => [c, c]), ui.assetCat);
-      h += `<div class="card">${as.length ? as.map((a) => `<div class="row" data-a="assetEdit" data-id="${a.id}">${ic('c1', ASSET_EMOJI[a.cat] || '📦')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${a.place ? esc(a.place) + ' · ' : ''}${a.price ? rp(a.price) : ''}</div></div>${a.warrantyUntil ? (a.warrantyUntil >= C.today() ? `<div style="text-align:right"><div class="s">Garansi</div>${badge(a.warrantyUntil)}</div>` : '<span class="bd">garansi habis</span>') : ''}</div>`).join('') : '<div class="empty">Belum ada aset. Catat barang berharga, nomor seri, dan masa garansinya.</div>'}</div><button class="btn full" data-a="assetAdd">+ Aset</button><p class="note">Kendaraan dicatat di halaman Kendaraan.</p>`;
+      h += `<div class="card">${as.length ? as.map((a) => `<div class="row" data-a="assetEdit" data-id="${a.id}">${ic('c1', ASSET_EMOJI[a.cat] || '📦')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${a.place ? esc(a.place) + ' · ' : ''}${a.price ? rp(a.price) : ''}</div></div>${a.warrantyUntil ? (a.warrantyUntil >= C.today() ? `<div style="text-align:right"><div class="s">Garansi</div>${badge(a.warrantyUntil)}</div>` : '<span class="bd">garansi habis</span>') : ''}</div>`).join('') : '<div class="empty">Belum ada aset. Catat barang berharga, nomor seri, dan masa garansinya.</div>'}</div><button class="btn full" data-a="assetAdd">+ Aset</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="asset">✨ Tambah dari template: kulkas, AC, TV, dll</button><p class="note">Kendaraan dicatat di halaman Kendaraan.</p>`;
       return { title: 'Aset & garansi', sub: list('asset').length + ' aset', html: h, add: () => assetForm() };
     },
     stok() {
@@ -855,23 +929,23 @@
         h += `<form class="inl" data-form="shop"><input name="n" placeholder="Tambah barang…" aria-label="Nama barang" autocomplete="off"><button class="btn">Tambah</button></form><div class="card">${it.length ? it.map((x) => `<div class="row ${x.done ? 'done' : ''}"><button class="chk ${x.done ? 'on' : ''}" data-a="shopTog" data-id="${x.id}" aria-label="Centang ${esc(x.name)}">${x.done ? '✓' : ''}</button><div class="grow t">${esc(x.name)}</div></div>`).join('') : '<div class="empty">Daftar belanja kosong.</div>'}</div>${it.some((x) => x.done) ? '<button class="btn alt sm" data-a="shopClear">Bersihkan yang sudah dicentang</button>' : ''}`;
       } else {
         const inv = list('inv').sort((a, b) => C.cmp(a.name, b.name)), low = C.lowStock(inv);
-        h += `${low.length ? `<button class="btn alt full" data-a="invToShop" style="margin-bottom:12px">📥 Masukkan ${low.length} barang menipis ke daftar belanja</button>` : ''}<div class="card">${inv.length ? inv.map((i) => `<div class="row">${ic('c3', '📦')}<div class="grow" data-a="invEdit" data-id="${i.id}"><div class="t">${esc(i.name)}${C.lowStock([i]).length ? ' <span class="bd late">menipis</span>' : ''}</div><div class="s">${i.min ? 'min ' + i.min + ' · ' : ''}${i.place ? esc(i.place) + ' · ' : ''}${i.expiry ? 'exp ' + fmtDate(i.expiry) : ''}</div></div><button class="qb" data-a="invDec" data-id="${i.id}" aria-label="Kurangi ${esc(i.name)}">−</button><div class="qty">${i.qty} ${esc(i.unit || '')}</div><button class="qb" data-a="invInc" data-id="${i.id}" aria-label="Tambah ${esc(i.name)}">+</button></div>`).join('') : '<div class="empty">Belum ada stok. Catat gas, beras, obat, dll. dengan batas minimum.</div>'}</div><button class="btn full" data-a="invAdd">+ Barang stok</button>`;
+        h += `${low.length ? `<button class="btn alt full" data-a="invToShop" style="margin-bottom:12px">📥 Masukkan ${low.length} barang menipis ke daftar belanja</button>` : ''}<div class="card">${inv.length ? inv.map((i) => `<div class="row">${ic('c3', '📦')}<div class="grow" data-a="invEdit" data-id="${i.id}"><div class="t">${esc(i.name)}${C.lowStock([i]).length ? ' <span class="bd late">menipis</span>' : ''}</div><div class="s">${i.min ? 'min ' + i.min + ' · ' : ''}${i.place ? esc(i.place) + ' · ' : ''}${i.expiry ? 'exp ' + fmtDate(i.expiry) : ''}</div></div><button class="qb" data-a="invDec" data-id="${i.id}" aria-label="Kurangi ${esc(i.name)}">−</button><div class="qty">${i.qty} ${esc(i.unit || '')}</div><button class="qb" data-a="invInc" data-id="${i.id}" aria-label="Tambah ${esc(i.name)}">+</button></div>`).join('') : '<div class="empty">Belum ada stok. Catat gas, beras, obat, dll. dengan batas minimum.</div>'}</div><button class="btn full" data-a="invAdd">+ Barang stok</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="inv">✨ Tambah dari template: beras, gas, galon, dll</button>`;
       }
       return { title: 'Stok & belanja', sub: '', html: h, add: tab === 'stok' ? () => invForm() : null };
     },
     kontak() {
       const cs = list('contact').sort((a, b) => C.cmp(!!b.emergency, !!a.emergency) || C.cmp(a.name, b.name));
-      return { title: 'Kontak penting', sub: '', add: () => contactForm(), html: `<div class="card">${cs.length ? cs.map((c) => `<div class="row">${ic(c.emergency ? 'c3' : 'c5', c.emergency ? '🚨' : '👤')}<div class="grow" data-a="contactEdit" data-id="${c.id}"><div class="t">${esc(c.name)}</div><div class="s">${esc(c.role || '')}</div></div>${c.phone ? `<a class="btn sm" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(c.phone)}</a>` : ''}</div>`).join('') : '<div class="empty">Belum ada kontak (tukang, dokter, RT, PLN…).</div>'}</div><button class="btn full" data-a="contactAdd">+ Kontak</button>` };
+      return { title: 'Kontak penting', sub: '', add: () => contactForm(), html: `<div class="card">${cs.length ? cs.map((c) => `<div class="row">${ic(c.emergency ? 'c3' : 'c5', c.emergency ? '🚨' : '👤')}<div class="grow" data-a="contactEdit" data-id="${c.id}"><div class="t">${esc(c.name)}</div><div class="s">${esc(c.role || '')}</div></div>${c.phone ? `<a class="btn sm" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(c.phone)}</a>` : ''}</div>`).join('') : '<div class="empty">Belum ada kontak (tukang, dokter, RT, PLN…).</div>'}</div><button class="btn full" data-a="contactAdd">+ Kontak</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="contact">✨ Tambah dari template: nomor darurat, tukang, dll</button>` };
     },
     dokumen() {
       const ds = list('doc').sort((a, b) => C.cmp(a.expiry || '9999', b.expiry || '9999'));
-      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<div class="card">${ds.length ? ds.map((d) => `<div class="row" data-a="docEdit" data-id="${d.id}">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div>`).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><p class="note">Hanya lokasi & masa berlaku. Jangan simpan nomor identitas di sini (belum terenkripsi ujung-ke-ujung).</p>` };
+      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<div class="card">${ds.length ? ds.map((d) => `<div class="row" data-a="docEdit" data-id="${d.id}">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div>`).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, sertifikat, polis, dll</button><p class="note">Hanya lokasi & masa berlaku. Jangan simpan nomor identitas di sini (belum terenkripsi ujung-ke-ujung).</p>` };
     },
     tugas() {
       const t = C.today(), all = list('task'), f = ui.taskFilter;
       const act = all.filter((x) => !x.done).sort(byDue), done = all.filter((x) => x.done).sort((a, b) => C.cmp(b.doneAt || '', a.doneAt || ''));
       const shown = f === 'aktif' ? act : done;
-      return { title: 'Tugas', sub: act.length + ' aktif', add: () => taskForm(), html: seg('taskFilter', [['aktif', 'Aktif (' + act.length + ')'], ['selesai', 'Selesai (' + done.length + ')']], f) + `<div class="card">${shown.length ? shown.map((x) => taskRow(x, t)).join('') : `<div class="empty">${f === 'aktif' ? 'Belum ada tugas.' : 'Belum ada tugas selesai.'}</div>`}</div><button class="btn full" data-a="taskAdd">+ Tugas baru</button>` };
+      return { title: 'Tugas', sub: act.length + ' aktif', add: () => taskForm(), html: seg('taskFilter', [['aktif', 'Aktif (' + act.length + ')'], ['selesai', 'Selesai (' + done.length + ')']], f) + `<div class="card">${shown.length ? shown.map((x) => taskRow(x, t)).join('') : `<div class="empty">${f === 'aktif' ? 'Belum ada tugas.' : 'Belum ada tugas selesai.'}</div>`}</div><button class="btn full" data-a="taskAdd">+ Tugas baru</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="task">✨ Tambah dari template: belanja bulanan, bersih-bersih, dll</button>` };
     },
     jurnal() {
       const js = list('journal').sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
@@ -879,7 +953,7 @@
     },
     habit() {
       const t = C.today(), hs = list('habit');
-      return { title: 'Kebiasaan', sub: '', add: () => habitForm(), html: `<div class="card">${hs.length ? hs.map((x) => habitRow(x, t)).join('') : '<div class="empty">Belum ada kebiasaan.</div>'}</div><button class="btn full" data-a="habitAdd">+ Kebiasaan</button>` };
+      return { title: 'Kebiasaan', sub: '', add: () => habitForm(), html: `<div class="card">${hs.length ? hs.map((x) => habitRow(x, t)).join('') : '<div class="empty">Belum ada kebiasaan.</div>'}</div><button class="btn full" data-a="habitAdd">+ Kebiasaan</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="habit">✨ Tambah dari template: olahraga, baca buku, dll</button>` };
     },
     harian() {
       const rs = list('rt').sort((a, b) => C.cmp(a.from || '', b.from || '') || C.cmp(a.name, b.name));
@@ -897,7 +971,7 @@
     },
     profil() {
       const p = profile();
-      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
+      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Tanggal lahir</span><b>${p.birth ? fmtDate(p.birth) : '—'}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
     },
     keluarga() {
       const ps = list('person').sort((a, b) => C.cmp(a.name, b.name)), t = C.today();
@@ -930,7 +1004,9 @@
         let sel = ps.find((x) => x.id === ui.afWho) || ps[0];
         h += `<div class="chips">${ps.map((x) => `<button class="chip ${x.id === sel.id ? 'on' : ''}" data-a="afWho" data-id="${x.id}">${esc(x.nick || x.name)}</button>`).join('')}</div>`;
         h += `<div class="card pad" style="display:flex;gap:12px;align-items:center">${avHTML(sel)}<div class="grow"><div class="t">${esc(sel.name)}</div><div class="s">${esc(sel.rel || '')} · ${sel.lastContact ? 'terakhir dikabari ' + (C.daysBetween(sel.lastContact, t) === 0 ? 'hari ini' : C.daysBetween(sel.lastContact, t) + ' hari lalu') : 'belum pernah dikabari lewat aplikasi'}</div></div></div>`;
-        h += afDrafts(sel).map((d, i) => `<div class="card pad draft"><p style="margin:0 0 10px;line-height:1.5">${esc(fillT(d.text, sel))}</p><div class="btns"><button class="btn sm" data-a="afWa" data-id="${sel.id}" data-i="${i}">${sel.phone ? 'WhatsApp' : 'WhatsApp (pilih kontak)'}</button>${navigator.share ? `<button class="btn alt sm" data-a="afShare" data-id="${sel.id}" data-i="${i}">Bagikan</button>` : ''}<button class="btn alt sm" data-a="afCopy" data-id="${sel.id}" data-i="${i}">Salin</button>${d.id ? `<button class="btn alt sm" data-a="draftEdit" data-id="${d.id}">Ubah</button>` : ''}</div></div>`).join('');
+        const all = afDrafts(sel), cats = ['Semua'].concat(all.map((d) => d.cat).filter((c, i, a) => a.indexOf(c) === i)), cat = cats.includes(ui.afCat) ? ui.afCat : 'Semua';
+        h += `<div class="chips">${cats.map((c) => `<button class="chip ${c === cat ? 'on' : ''}" data-a="afCat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
+        h += all.map((d, i) => (cat !== 'Semua' && d.cat !== cat ? '' : `<div class="card pad draft"><p style="margin:0 0 10px;line-height:1.5">${esc(fillT(d.text, sel))}</p><div class="btns"><button class="btn sm" data-a="afWa" data-id="${sel.id}" data-i="${i}">${sel.phone ? 'WhatsApp' : 'WhatsApp (pilih kontak)'}</button>${navigator.share ? `<button class="btn alt sm" data-a="afShare" data-id="${sel.id}" data-i="${i}">Bagikan</button>` : ''}<button class="btn alt sm" data-a="afCopy" data-id="${sel.id}" data-i="${i}">Salin</button>${d.id ? `<button class="btn alt sm" data-a="draftEdit" data-id="${d.id}">Ubah</button>` : ''}</div></div>`)).join('');
         h += '<button class="btn alt full" data-a="draftAdd">+ Tulis draf sendiri</button><p class="note">Tombol WhatsApp membuka chat dengan pesan sudah terisi; Anda yang menekan kirim. Tidak ada pesan terkirim otomatis.</p>';
       } else if (tab === 'kartu') {
         const cats = Object.keys(CARDS), cat = cats.includes(ui.cardCat) ? ui.cardCat : cats[0], deck = CARDS[cat];
@@ -946,10 +1022,17 @@
     },
     setelan() { return { title: 'Sinkron & backup', sub: '', html: vSettings() }; },
     bantuan() {
-      const demo = list('task').concat(list('plan')).some((x) => x.demo);
-      return { title: 'Bantuan', sub: '', html: `<div class="card pad"><div class="t">Pasang di layar utama HP</div><p class="s" style="margin:6px 0 0">Android (Chrome): menu ⋮ → <b>Tambahkan ke layar utama</b> / <b>Instal aplikasi</b>. iPhone (Safari): tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p></div>
-<div class="card pad"><div class="t">Data contoh</div><p class="s" style="margin:6px 0 10px">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja aplikasi. Bisa dihapus kapan saja tanpa menyentuh data asli Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}</div>
-<div class="card pad"><div class="t">Aturan yang dipegang</div><p class="s" style="margin:6px 0 0">Uang = bilangan bulat rupiah. Transaksi tidak dihapus, hanya di-void. Transfer bukan pemasukan/pengeluaran. Notifikasi berjudul generik.</p></div><p class="note">RUMAHKU-ONE Lite v0.3</p>` };
+      const demo = list('task').concat(list('plan')).some((x) => x.demo), origin = location.origin, url = origin + location.pathname.replace(/index\.html$/, '');
+      const D = (title, body, open) => `<details class="hlp" ${open ? 'open' : ''}><summary>${title}</summary><div class="hb">${body}</div></details>`;
+      return { title: 'Bantuan', sub: 'Panduan singkat', html:
+        D('🚀 Mulai cepat (5 menit)', '<ol><li><b>Lainnya → Profil saya</b>: isi nama, sapaan di Beranda jadi personal.</li><li><b>Rumah → Perawatan → Tambah dari template</b>: pilih servis AC, kuras toren, dst.</li><li><b>Tagihan rutin → Tambah dari template</b>, lalu ketuk tiap tagihan untuk mengisi nominal dan tanggal aslinya.</li><li><b>Kendaraan → Tambah</b>: plat, odometer, pajak, STNK.</li><li><b>Rutinitas harian</b>: template minum air, vitamin, dll.</li><li><b>Keluarga</b>: tambah anggota, lalu isi data identitas dan foto masing-masing.</li></ol><p class="s">Semua template bisa diubah. Tombol + di kanan bawah = tambah cepat.</p>', true)
+        + D('📱 Pasang di layar utama HP', '<p><b>Android (Chrome):</b> buka alamat aplikasi, menu ⋮ → <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>. Ikon RUMAHKU muncul seperti aplikasi biasa dan bisa dibuka tanpa bilah alamat.</p><p><b>iPhone (Safari):</b> tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p><p class="s">Setelah dibuka sekali dengan internet, aplikasi tetap terbuka saat offline.</p>')
+        + D('☁️ Hubungkan Google Drive (sekali saja)', `<p><b>Tidak wajib.</b> Tanpa Drive, data tetap tersimpan di HP Anda. Cukup rutin ketuk <b>Lainnya → Sinkron &amp; backup → Bagikan backup</b> dan simpan ke Files/Drive/WhatsApp. Langkah di bawah hanya bila ingin data otomatis sama di beberapa perangkat.</p><ol><li>Buka <b>console.cloud.google.com</b> dan masuk dengan akun Google Anda.</li><li>Buat <b>Project baru</b> (nama bebas, mis. "rumahku").</li><li><b>APIs &amp; Services → Library</b>, cari <b>Google Drive API</b>, klik <b>Enable</b>.</li><li><b>OAuth consent screen</b> (atau "Google Auth Platform"): pilih <b>External</b>, isi nama aplikasi dan email Anda. Di <b>Audience / Test users</b>, tambahkan email Google Anda sendiri.</li><li><b>Credentials → Create credentials → OAuth client ID</b>, jenis <b>Web application</b>.</li><li>Pada <b>Authorized JavaScript origins</b> isi persis: <code>${esc(origin)}</code> (tanpa garis miring di akhir dan tanpa nama folder).</li><li>Salin <b>Client ID</b> (berakhiran .apps.googleusercontent.com).</li><li>Di aplikasi: <b>Lainnya → Sinkron &amp; backup</b>, tempel Client ID, ketuk <b>Simpan ID</b>, lalu <b>Hubungkan &amp; sinkron</b>.</li></ol><p class="s">Layar "Google belum memverifikasi aplikasi ini" muncul untuk aplikasi pribadi: pilih <b>Lanjutan → Lanjutkan</b>. Aplikasi hanya meminta akses ke folder tersembunyi miliknya sendiri di Drive, bukan seluruh file Anda. Tampilan menu Google Cloud kadang berubah nama; ikuti padanan terdekat.</p>`)
+        + D('🔔 Pengingat & notifikasi', '<p>Ketuk <b>Lainnya → Notifikasi → Izinkan notifikasi</b>. Pengingat berbunyi selama aplikasi terbuka atau berjalan di latar.</p><p>Agar <b>pasti berbunyi saat HP terkunci</b>, ekspor ke Kalender HP (.ics) dari halaman Notifikasi, lalu buka berkasnya dan pilih Google Calendar.</p>')
+        + D('👪 Dipakai bersama / dites orang lain', '<p>Bagikan alamat aplikasi. <b>Setiap orang mendapat aplikasi kosong dan datanya terpisah di HP masing-masing</b>; tidak ada data yang bercampur dan tidak ada server pusat.</p><p>Untuk sinkron Drive, orang lain memakai Client ID mereka sendiri (langkah di atas), atau Anda menambahkan email mereka sebagai <b>Test users</b> di project Anda. Untuk berbagi data keluarga yang sama antar HP, pakai satu akun Google yang sama atau ekspor/impor JSON.</p><button class="btn alt" data-a="shareApp">Bagikan alamat aplikasi</button><p class="s">' + esc(url) + '</p>')
+        + D('🧪 Data contoh', `<p class="s">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja. Yang belum Anda ubah bisa dihapus sekaligus; yang sudah Anda edit otomatis menjadi milik Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}`)
+        + D('🔒 Privasi & keamanan', '<p>Data ada di perangkat Anda (dan folder privat Drive Anda bila terhubung). Tidak ada server pengembang. Nomor KTP/NPWP disimpan <b>belum terenkripsi</b>: pakai kunci layar HP yang kuat. Foto berkas hanya di perangkat itu. Backup rutin: <b>Sinkron &amp; backup → Ekspor JSON</b>.</p><p class="s">Aturan: uang = rupiah bulat; transaksi tidak dihapus, hanya di-void; transfer bukan pemasukan/pengeluaran.</p>')
+        + '<p class="note">RUMAHKU-ONE Lite v0.3</p>' };
     },
   };
 
@@ -960,7 +1043,7 @@
 <div class="btns" style="margin-top:10px"><button class="btn alt" data-a="saveCid">Simpan ID</button><button class="btn" data-a="syncNow">${cfg.connected ? 'Sinkron sekarang' : 'Hubungkan &amp; sinkron'}</button></div>
 <p class="note">Status: ${esc(syncMsg || (cfg.connected ? 'terhubung' : 'belum terhubung'))} · terakhir sinkron: ${esc(last)}</p>
 <p class="note">Data disimpan di folder tersembunyi aplikasi di Drive Anda. Tanpa Client ID, data hanya di perangkat ini.</p></div>
-<h2>Backup</h2><div class="card pad"><div class="btns"><button class="btn alt" data-a="export">Ekspor JSON</button><button class="btn alt" data-a="import">Impor / gabung JSON</button></div><input type="file" id="impf" accept="application/json,.json" hidden></div>
+<h2>Simpan di HP (tanpa Google Drive)</h2><div class="card pad"><p class="s" style="margin:0 0 10px">Data <b>sudah tersimpan di HP ini</b> otomatis. Untuk jaga-jaga (ganti HP, hapus data browser), buat salinan berkala: ketuk <b>Bagikan backup</b>, lalu pilih <b>Simpan ke Files</b>, Drive, WhatsApp, atau email ke diri sendiri.</p><div class="kv"><span>Backup terakhir</span><b>${cfg.lastBackup ? esc(new Date(cfg.lastBackup).toLocaleDateString('id-ID')) : 'belum pernah'}</b></div><div class="kv"><span>Penyimpanan permanen</span><b>${esc(persistMsg)}</b></div><div class="btns" style="margin-top:10px"><button class="btn" data-a="shareBackup">Bagikan backup</button><button class="btn alt" data-a="export">Unduh JSON</button><button class="btn alt" data-a="import">Impor / gabung JSON</button></div><input type="file" id="impf" accept="application/json,.json" hidden></div>
 <h2>Pengingat</h2><div class="card pad"><p class="note" style="margin-top:0">Izin notifikasi, uji, riwayat, dan ekspor ke Kalender HP ada di halaman Notifikasi.</p><button class="btn alt" data-a="nav" data-to="notif">Buka Notifikasi</button></div>
 <h2>Data</h2><div class="card pad"><button class="btn bad" data-a="wipe">Hapus data di perangkat ini</button><p class="note">Salinan di Drive (jika terhubung) tidak ikut terhapus.</p></div>`;
   }
@@ -1038,13 +1121,22 @@
     syncNow() { const el = document.getElementById('cid'); if (el && el.value.trim() !== (cfg.clientId || '')) { cfg.clientId = el.value.trim(); cfg.connected = false; saveCfg(); } runSync(true); },
     export() {
       const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rumahku-backup-' + C.today() + '.json';
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rumahku-backup-' + C.today() + '.json'; cfg.lastBackup = Date.now(); saveCfg();
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    },
+    async shareBackup() {
+      const name = 'rumahku-backup-' + C.today() + '.json', file = new File([JSON.stringify(store)], name, { type: 'application/json' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Backup RUMAHKU' }); toast('Pilih Drive / Files / WhatsApp untuk menyimpan'); cfg.lastBackup = Date.now(); saveCfg(); render(); }
+        else A.export();
+      } catch (e) { if (e && e.name !== 'AbortError') A.export(); }
     },
     import() { document.getElementById('impf').click(); },
     notif() { if (!('Notification' in window)) return toast('Browser tidak mendukung notifikasi'); Notification.requestPermission().then(() => render()); },
     wipe() { confirmBox('Hapus SEMUA data di perangkat ini? (Ekspor backup dulu bila perlu)', () => { store = C.emptyStore(); persist(); render(); toast('Data lokal dihapus'); }); },
     demoOn() { demoOn(); }, demoOff() { demoOff(); },
+    shareApp() { const u = location.origin + location.pathname.replace(/index\.html$/, ''); if (navigator.share) navigator.share({ title: 'RUMAHKU-ONE', url: u }).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => toast('Alamat disalin'), () => toast(u)); else toast(u); },
+    tpl(d) { if (tplForms[d.k]) tplForms[d.k](); },
     rtAdd() { routineForm(); }, rtTpl() { rtTemplateForm(); }, rtEdit(d) { routineForm(get('rt', d.id)); },
     rtInc(d) { rtBump(d.id, 1); }, rtDec(d) { rtBump(d.id, -1); },
     profilEdit() { profilForm(); },
@@ -1068,7 +1160,7 @@
       });
     },
     fileOpen(d) { const f = get('pfile', d.id); if (f) viewFile(f); },
-    afWho(d) { ui.afWho = d.id; render(); }, afWa(d) { afSend('wa', d.id, d.i); }, afShare(d) { afSend('share', d.id, d.i); }, afCopy(d) { afSend('copy', d.id, d.i); },
+    afWho(d) { ui.afWho = d.id; ui.afCat = 'Semua'; render(); }, afCat(d) { ui.afCat = d.v; render(); }, afWa(d) { afSend('wa', d.id, d.i); }, afShare(d) { afSend('share', d.id, d.i); }, afCopy(d) { afSend('copy', d.id, d.i); },
     draftAdd() { draftForm(); }, draftEdit(d) { draftForm(get('draft', d.id)); },
     cardCat(d) { ui.cardCat = d.v; ui.cardShift = 0; render(); }, cardNext() { ui.cardShift++; render(); },
     cardDone(d) { if (!list('ccard').some((c) => c.q === d.q)) C.put(store, 'ccard', { q: d.q, cat: d.cat, date: C.today() }); commit(); toast('Tersimpan di Riwayat'); },

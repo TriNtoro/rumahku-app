@@ -346,6 +346,31 @@
     if (t.getMonth() < b.getMonth() || (t.getMonth() === b.getMonth() && t.getDate() < b.getDate())) a--;
     return a >= 0 ? a : null;
   }
+  // Semua hal bertanggal untuk kalender (rentang setengah terbuka [from,to)): acara, tugas, ulang tahun, tagihan, perawatan, pajak/STNK, garansi, dokumen, stok kedaluwarsa.
+  function calendarItems(store, from, to) {
+    const out = [], L = (t) => list(store, t);
+    const push = (date, kind, icon, title, sub, go, extra) => { if (date >= from && date < to) out.push(Object.assign({ date, kind, icon, title, sub: sub || '', go: go || '' }, extra || {})); };
+    L('event').forEach((ev) => expandEvent(ev, from, to).forEach((d) => push(d, 'event', '📅', ev.title, ev.time && !ev.allDay ? ev.time : 'Seharian', '', { id: ev.id, occ: d, time: ev.allDay ? '' : ev.time })));
+    L('task').filter((t) => !t.done && t.due).forEach((t) => push(t.due, 'task', '✅', t.title, t.time || '', 'tugas', { id: t.id, time: t.time }));
+    const pr = store.rec.profile && !store.rec.profile._d ? store.rec.profile : null;
+    const people = L('person').map((p) => ({ name: p.nick || p.name, birth: p.birth })).concat(pr && pr.birth ? [{ name: pr.nick || pr.name || 'Saya', birth: pr.birth }] : []).filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.birth || ''));
+    const bills = L('bill').filter((b) => +b.dueDay >= 1);
+    for (let d = from; d < to; d = addDays(d, 1)) {
+      const dt = parseD(d), md = d.slice(5), dim = daysInMonth(dt.getFullYear(), dt.getMonth());
+      people.forEach((p) => {
+        let bmd = p.birth.slice(5); if (bmd === '02-29' && dim === 28) bmd = '02-28';
+        if (bmd === md) { const age = dt.getFullYear() - +p.birth.slice(0, 4); push(d, 'birthday', '🎂', 'Ulang tahun ' + p.name, age > 0 ? 'ke-' + age : '', 'keluarga'); }
+      });
+      bills.forEach((b) => { if (Math.min(+b.dueDay, dim) === dt.getDate()) push(d, 'bill', '🧾', b.name, (b.paidYM === d.slice(0, 7) ? 'sudah dibayar' : b.amountEst ? '±' + fmtIDR(b.amountEst) : 'tagihan'), 'tagihan', { paid: b.paidYM === d.slice(0, 7) }); });
+    }
+    L('plan').forEach((p) => push(p.nextDue, 'plan', '🔧', p.name, 'perawatan', p.vehicleId ? 'kendaraan' : 'perawatan'));
+    L('veh').forEach((v) => { push(v.pajakDue, 'veh', '🚗', 'Pajak ' + v.name, 'jatuh tempo', 'kendaraan'); push(v.stnkDue, 'veh', '🚗', 'STNK ' + v.name, 'jatuh tempo', 'kendaraan'); });
+    L('asset').forEach((a) => push(a.warrantyUntil, 'asset', '🛡️', 'Garansi habis: ' + a.name, '', 'aset'));
+    L('doc').forEach((d) => push(d.expiry, 'doc', '📄', 'Berlaku sampai: ' + d.title, '', 'dokumen'));
+    L('inv').forEach((i) => push(i.expiry, 'inv', '📦', 'Kedaluwarsa: ' + i.name, '', 'stok'));
+    return out.sort((a, b) => cmp(a.date, b.date) || cmp(a.time || '', b.time || '') || cmp(a.title, b.title));
+  }
+
   // Nomor WhatsApp internasional tanpa tanda: 0812-xxx -> 62812xxx (Indonesia); "+62 8.." -> 628..
   function waNumber(phone) {
     let d = String(phone || '').replace(/[^\d+]/g, '');
@@ -391,6 +416,6 @@
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
     kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
-    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, maskId, ageOn, buildICS, routineICS,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, maskId, ageOn, buildICS, routineICS,
   };
 });

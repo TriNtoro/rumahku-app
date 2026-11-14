@@ -242,3 +242,21 @@ test('data contoh yang diubah pengguna tidak lagi bertanda demo', () => {
   const r2 = C.put(st, 'plan', { name: 'Lain', demo: true }); C.put(st, 'plan', { id: r2.id, demo: true });
   assert.equal(st.rec[r2.id].demo, true);
 });
+test('calendarItems: ulang tahun (anggota & profil), tagihan, perawatan, pajak, garansi, dokumen', () => {
+  const st = C.emptyStore();
+  C.put(st, 'profile', { id: 'profile', name: 'Illa', nick: 'Illa', birth: '1985-11-20' });
+  C.put(st, 'person', { name: 'Siti Aminah', nick: 'Siti', birth: '1990-02-29' });
+  C.put(st, 'bill', { name: 'Listrik', dueDay: 31, amountEst: 450000 });
+  C.put(st, 'plan', { name: 'Servis AC', nextDue: '2026-11-18' });
+  C.put(st, 'veh', { name: 'Beat', pajakDue: '2026-11-25', stnkDue: '' });
+  C.put(st, 'asset', { name: 'Kulkas', warrantyUntil: '2026-11-30' });
+  C.put(st, 'doc', { title: 'Polis', expiry: '2026-11-22' });
+  const nov = C.calendarItems(st, '2026-11-01', '2026-12-01');
+  const by = (k) => nov.filter((x) => x.kind === k);
+  assert.equal(by('birthday').length, 1); assert.equal(by('birthday')[0].date, '2026-11-20'); assert.match(by('birthday')[0].title, /Illa/); assert.equal(by('birthday')[0].sub, 'ke-41');
+  assert.equal(by('bill')[0].date, '2026-11-30', 'tanggal 31 di bulan 30 hari -> akhir bulan');
+  assert.equal(by('plan')[0].date, '2026-11-18'); assert.equal(by('veh').length, 1); assert.equal(by('asset')[0].date, '2026-11-30'); assert.equal(by('doc')[0].date, '2026-11-22');
+  const feb = C.calendarItems(st, '2027-02-01', '2027-03-01');
+  assert.equal(feb.filter((x) => x.kind === 'birthday')[0].date, '2027-02-28', '29 Feb -> 28 Feb di tahun biasa');
+  assert.equal(C.calendarItems(st, '2026-12-01', '2026-12-02').length, 0 + C.calendarItems(st, '2026-12-01', '2026-12-02').filter((x) => x.kind === 'bill').length);
+});
