@@ -404,7 +404,7 @@
     asset: [['Kulkas', 'Elektronik'], ['Mesin cuci', 'Elektronik'], ['AC', 'Elektronik'], ['TV', 'Elektronik'], ['Laptop', 'Elektronik'], ['HP keluarga', 'Elektronik'], ['Rice cooker', 'Elektronik'], ['Dispenser air', 'Elektronik'], ['Water heater', 'Elektronik'], ['Kompor', 'Elektronik'], ['Sofa', 'Perabot'], ['Kasur', 'Perabot'], ['Lemari', 'Perabot'], ['Meja makan', 'Perabot'], ['Atap/genteng', 'Bangunan'], ['Pagar', 'Bangunan']],
     inv: [['Beras', 'kg', 2], ['Gas LPG 3 kg', 'tabung', 1], ['Galon air minum', 'galon', 1], ['Minyak goreng', 'liter', 1], ['Telur', 'kg', 1], ['Gula', 'kg', 1], ['Garam', 'bungkus', 1], ['Sabun mandi', 'pcs', 2], ['Sabun cuci piring', 'pcs', 1], ['Deterjen', 'pcs', 1], ['Tisu', 'pak', 2], ['Obat P3K (plester, antiseptik)', 'set', 1], ['Obat demam', 'strip', 1], ['Lampu cadangan', 'pcs', 1]],
     contact: [['Polisi', 'Darurat', '110', true], ['Ambulans', 'Darurat', '118', true], ['Pemadam kebakaran', 'Darurat', '113', true], ['SAR / Basarnas', 'Darurat', '115', true], ['Nomor darurat umum', 'Darurat', '112', true], ['PLN (gangguan listrik)', 'Layanan', '123', false], ['Ketua RT', 'Lingkungan', '', false], ['Satpam / keamanan', 'Lingkungan', '', false], ['Tukang listrik', 'Tukang', '', false], ['Tukang ledeng', 'Tukang', '', false], ['Tukang AC', 'Tukang', '', false], ['Dokter keluarga', 'Kesehatan', '', false], ['Bengkel langganan', 'Kendaraan', '', false], ['Sekolah anak', 'Keluarga', '', false]],
-    doc: ['Kartu Keluarga', 'Sertifikat rumah (SHM/HGB)', 'PBB (bukti bayar tahunan)', 'Polis asuransi', 'BPKB kendaraan', 'Buku nikah', 'Akta kelahiran anak', 'Ijazah', 'Paspor', 'Surat wasiat / dokumen waris', 'Kartu BPJS', 'Kontrak kerja'],
+    doc: ['KTP', 'NPWP', 'SIM', 'Kartu Keluarga', 'Sertifikat rumah (SHM/HGB)', 'PBB (bukti bayar tahunan)', 'Polis asuransi', 'BPKB kendaraan', 'Buku nikah', 'Akta kelahiran anak', 'Ijazah', 'Paspor', 'Surat wasiat / dokumen waris', 'Kartu BPJS', 'Kontrak kerja'],
     acc: [['Dompet tunai', 'kas'], ['BCA', 'bank'], ['Mandiri', 'bank'], ['BRI', 'bank'], ['BNI', 'bank'], ['SeaBank', 'bank'], ['Jago', 'bank'], ['Dana darurat (rekening terpisah)', 'bank', true], ['GoPay', 'ewallet'], ['OVO', 'ewallet'], ['DANA', 'ewallet'], ['ShopeePay', 'ewallet'], ['Kartu kredit', 'kartu'], ['Investasi (saham/reksa dana)', 'invest']],
     habit: ['Olahraga 30 menit', 'Baca buku', 'Tidur sebelum jam 10 malam', 'Jalan pagi', 'Tanpa gula/minuman manis', 'Tulis syukur hari ini', 'Waktu berkualitas dengan keluarga'],
     task: [['Belanja bulanan', 'monthly', 'Rumah'], ['Bersih-bersih rumah', 'weekly', 'Rumah'], ['Ganti sprei', 'weekly', 'Rumah'], ['Cek tabung gas & galon', 'monthly', 'Rumah'], ['Review keuangan bulanan', 'monthly', 'Pribadi'], ['Laporan kerja mingguan', 'weekly', 'Pekerjaan'], ['Backup data penting', 'monthly', 'Pribadi'], ['Telepon orang tua', 'weekly', 'Keluarga']],
@@ -463,8 +463,8 @@
       { k: 'title', label: 'Nama dokumen', req: true, list: ['Sertifikat rumah', 'Polis asuransi', 'Kartu keluarga', 'Paspor', 'SIM', 'Kontrak kerja', 'Perjanjian sewa'] },
       { k: 'expiry', label: 'Berlaku sampai / kedaluwarsa', type: 'date' }, { k: 'place', label: 'Disimpan di mana (laci, brankas, folder…)' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
     ], d, (v) => { C.put(store, 'doc', { id: d.id, title: v.title, expiry: v.expiry, place: v.place, notes: v.notes }); commit(); },
-    d.id ? [{ label: 'Hapus dokumen', fn: () => { C.remove(store, d.id); commit(); } }] : null,
-    'Catat lokasi & masa berlaku saja. Nomor KTP/NPWP anggota keluarga disimpan di menu Keluarga (tersembunyi di layar, belum terenkripsi).');
+    d.id ? [{ label: 'Hapus dokumen', fn: () => { list('pfile').filter((f) => f.docId === d.id).forEach((f) => { IDB.del(f.id); C.remove(store, f.id); }); C.remove(store, d.id); commit(); } }] : null,
+    'Catat lokasi & masa berlaku. Foto/scan ditambahkan lewat tombol 📷 di daftar dokumen setelah disimpan. Foto KTP/NPWP tiap orang juga bisa di Brankas identitas.');
   }
   function journalForm(j) {
     j = j || {};
@@ -860,7 +860,7 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const APP_VERSION = '0.5', APP_DATE = '15 Nov 2026';
+const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
   const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
@@ -958,7 +958,7 @@ const APP_VERSION = '0.5', APP_DATE = '15 Nov 2026';
     h += `<h2>Hari ini</h2><div class="card">${items.length ? items.map((r) => `<div class="hr" data-a="nav" data-to="${r[3]}">${ic(r[0], r[1])}<div class="grow t" style="font-weight:600">${r[2]}</div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada yang perlu diperhatikan. Mulai dengan tombol + atau isi data contoh di Lainnya → Bantuan.</div>'}</div>`;
     if (tasks.length) h += `<h2>Agenda tugas</h2><div class="card">${tasks.map((x) => taskRow(x, t)).join('')}</div>`;
     h += `<h2>Menu</h2><div class="tiles">${[['🛠️', 'Rumah', 'tab:rumah'], ['🔧', 'Perawatan', 'perawatan'], ['🧾', 'Tagihan', 'tagihan'], ['🚗', 'Kendaraan', 'kendaraan'], ['🛒', 'Belanja', 'stok'], ['✅', 'Tugas', 'tugas'], ['📓', 'Jurnal', 'jurnal'], ['🌱', 'Kebiasaan', 'habit'], ['💧', 'Rutinitas', 'harian'], ['👨‍👩‍👧', 'Keluarga', 'keluarga'], ['💌', 'Kabar & afeksi', 'afeksi'], ['🔔', 'Notifikasi', 'notif']].map((m) => `<div class="tile" data-a="nav" data-to="${m[2]}" role="button" tabindex="0"><span class="em">${m[0]}</span>${m[1]}</div>`).join('')}</div>`;
-    return { title: greet, sub: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(), html: h + '<p class="note" style="text-align:center">RUMAHKU-ONE v' + APP_VERSION + ' · Dibuat oleh Illusix</p>' };
+    return { title: greet, sub: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ' · v' + APP_VERSION, html: h + '<p class="note" style="text-align:center">RUMAHKU-ONE v' + APP_VERSION + ' · Dibuat oleh Illusix</p>' };
   }
 
   function vRumah() {
@@ -1169,7 +1169,7 @@ const APP_VERSION = '0.5', APP_DATE = '15 Nov 2026';
       + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c4', '🗂️', 'Brankas identitas', 'Foto KTP, NPWP, KK siap dikirim', 'brankas'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
       + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
       + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
-    return { title: 'Lainnya', sub: '', html: h + ABOUT_HTML };
+    return { title: 'Lainnya', sub: 'v' + APP_VERSION + ' · oleh Illusix', html: h + ABOUT_HTML };
   }
 
   // ---------- subhalaman ----------
@@ -1241,7 +1241,7 @@ const APP_VERSION = '0.5', APP_DATE = '15 Nov 2026';
     },
     dokumen() {
       const ds = list('doc').sort((a, b) => C.cmp(a.expiry || '9999', b.expiry || '9999'));
-      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<div class="card">${ds.length ? ds.map((d) => `<div class="row" data-a="docEdit" data-id="${d.id}">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div>`).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, sertifikat, polis, dll</button><p class="note">Hanya lokasi & masa berlaku. Jangan simpan nomor identitas di sini (belum terenkripsi ujung-ke-ujung).</p>` };
+      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<div class="card pad" data-a="nav" data-to="brankas" style="cursor:pointer"><div class="t">🪪 Brankas KTP, NPWP, KK, SIM</div><div class="s">Simpan foto scan identitas per orang, siap dikirim saat diminta. Ketuk di sini.</div></div><div class="card">${ds.length ? ds.map((d) => { const nf = list('pfile').filter((f) => f.docId === d.id).length; return `<div class="row"><div class="grow" data-a="docEdit" data-id="${d.id}" style="display:flex;gap:12px;align-items:center">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div><button class="btn alt sm" data-a="docFiles" data-id="${d.id}" aria-label="Foto scan ${esc(d.title)}">📷${nf ? ' ' + nf : ''}</button></div>`; }).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, sertifikat, polis, dll</button><p class="note">Ketuk 📷 di tiap dokumen untuk menyimpan foto/scan-nya (tersimpan hanya di HP ini). Jangan simpan nomor identitas sebagai teks di catatan (belum terenkripsi ujung-ke-ujung).</p>` };
     },
     tugas() {
       const t = C.today(), all = list('task'), f = ui.taskFilter;
@@ -1425,6 +1425,16 @@ const APP_VERSION = '0.5', APP_DATE = '15 Nov 2026';
       const ps = list('person').sort((a, b) => C.cmp(a.name, b.name));
       const items = ps.map((p) => ({ label: p.name + (p.rel ? ' (' + p.rel + ')' : ''), fn: () => A.fileAdd({ id: p.id }) })); items.push({ label: '➕ Anggota baru (mis. diri sendiri)', fn: () => personForm() });
       openMenu('Berkas milik siapa?', items);
+    },
+    docFiles(d) {
+      const doc = get('doc', d.id); if (!doc) return; const fs = list('pfile').filter((f) => f.docId === doc.id);
+      const items = fs.map((f, i) => ({ label: '🖼️ Lihat / kirim foto ' + (i + 1) + (f.size ? ' (' + Math.round(f.size / 1024) + ' KB)' : ''), fn: () => viewFile(f) }));
+      items.push({ label: '📷 Tambah foto / scan', fn: () => pickImage(async (file) => {
+        let blob; try { blob = await resizeBlob(file, 1600, 0.78); } catch (e) { return toast(e.message); }
+        const rec = C.put(store, 'pfile', { personId: '', docId: doc.id, label: doc.title, size: blob.size });
+        IDB.put(rec.id, blob).then(() => { commit(); toast('Foto tersimpan di HP ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan foto (penyimpanan penuh/dibatasi)'); });
+      }) });
+      openMenu(doc.title, items);
     },
     goalAdd() { goalForm(); }, goalTpl() { goalTplMenu(); }, goalEdit(d) { const g = get('goal', d.id); if (g) goalForm(g); }, goalDep(d) { const g = get('goal', d.id); if (g) goalDepForm(g); },
     recapWa() { window.open('https://wa.me/?text=' + encodeURIComponent(recapText(ui.moneyMonth || nowYM())), '_blank', 'noopener'); },
