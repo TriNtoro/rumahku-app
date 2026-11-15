@@ -61,15 +61,15 @@ const nk2 = await p.evaluate((id) => window.__rk.C.list(window.__rk.store(), 'pl
 ok(nk2 === 59900, 'selesai servis di 54.900 -> berikutnya 59.900 (dapat ' + nk2 + ')');
 // tagihan
 await p.evaluate(() => history.back()); await new Promise((r) => setTimeout(r, 300));
-await nav('tagihan'); t = await txt(); ok(/Listrik PLN/.test(t) && /2 hari lagi/.test(t) && /perkiraan tagihan rutin per bulan/i.test(t), 'Tagihan: hitung mundur & total');
+await nav('tagihan'); t = await txt(); ok(/Listrik PLN/.test(t) && /2 hari lagi/.test(t) && /Sudah dibayar/.test(t) && /Belum dibayar/.test(t), 'Tagihan: hitung mundur & dashboard bulan ini');
 await shot('tagihan');
 const nwBefore = await p.evaluate(() => { const C = window.__rk.C, s = window.__rk.store(); return C.netWorth(C.list(s, 'acc'), C.list(s, 'tx')); });
 await click('[data-a=billPay]'); await submit();
 const nwAfter = await p.evaluate(() => { const C = window.__rk.C, s = window.__rk.store(); return C.netWorth(C.list(s, 'acc'), C.list(s, 'tx')); });
 ok(nwBefore - nwAfter === 450000, 'Bayar tagihan mencatat pengeluaran Rp 450.000 ke Uang');
 const nb = await p.evaluate(() => { const C = window.__rk.C, b = C.list(window.__rk.store(), 'bill').find((x) => x.name === 'Listrik PLN'); return C.daysBetween(C.today(), C.billNext(b, C.today())); }); ok(nb >= 25, 'tagihan dibayar pindah ke periode berikutnya (' + nb + ' hari lagi)');
-await click('[data-a=billAdd]'); await setf('name', 'PBB'); await setf('dueDay', '31'); await setf('amountEst', '800.000'); await submit();
-t = await txt(); ok(/PBB/.test(t) && /Tiap tgl 31/.test(t), 'tambah tagihan rutin baru');
+await click('[data-a=billAdd]'); await p.evaluate(() => [...document.querySelectorAll('#dlg button')].find((x) => /lainnya/i.test(x.textContent)).click()); await setf('name', 'PBB'); await setf('dueDay', '31'); await setf('amountEst', '800.000'); await submit();
+t = await txt(); ok(/PBB/.test(t) && /tgl 31/.test(t), 'tambah tagihan rutin baru');
 // stok -> belanja
 await p.evaluate(() => history.back()); await new Promise((r) => setTimeout(r, 300));
 await nav('stok'); await click('[data-a=set][data-v=stok]'); t = await txt(); ok(/menipis/.test(t), 'stok menipis ditandai');

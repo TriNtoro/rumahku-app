@@ -40,13 +40,27 @@
   };
   const billItems = () => BILL_NAMES.map((n) => ({ name: n, kind: 'tagihan' })).concat((WAJIB_BY_MODE[modeOf() || 'pekerja']).map((x) => ({ name: x[0], kind: x[1] })));
   const BILL_CAT = { tagihan: 'Tagihan', wajib: 'Kewajiban tetap', cicilan: 'Cicilan' };
+  // [kunci, ikon, nama, jenis, kelompok isian, nama bawaan]. KPR dan "angsuran rumah" digabung (isinya sama); kelompok: angsuran | arisan | simple
+  const BILL_CATS = [
+    ['kpr', '🏠', 'KPR / Angsuran rumah', 'cicilan', 'angsuran', 'KPR Rumah'], ['kendaraan', '🚗', 'Cicilan kendaraan (mobil/motor)', 'cicilan', 'angsuran', 'Cicilan Kendaraan'],
+    ['haji', '🕋', 'Angsuran Haji', 'cicilan', 'angsuran', 'Angsuran Haji'], ['umrah', '🕌', 'Angsuran Umrah', 'cicilan', 'angsuran', 'Angsuran Umrah'],
+    ['arisan', '🤝', 'Arisan', 'wajib', 'arisan', 'Arisan'], ['elektronik', '📺', 'Cicilan elektronik', 'cicilan', 'angsuran', 'Cicilan Elektronik'],
+    ['pinjaman', '💳', 'Cicilan pinjaman', 'cicilan', 'angsuran', 'Cicilan Pinjaman'], ['asuransi', '🛡️', 'Asuransi', 'wajib', 'simple', 'Asuransi'],
+    ['sekolah', '🎓', 'Biaya pendidikan / sekolah', 'wajib', 'simple', 'Biaya Sekolah'], ['internet', '🌐', 'Internet dan telepon', 'tagihan', 'simple', 'Internet'],
+    ['listrik', '💡', 'Listrik dan air', 'tagihan', 'simple', 'Listrik PLN'], ['iuran', '🏘️', 'Iuran lingkungan', 'wajib', 'simple', 'Iuran Lingkungan'],
+    ['langganan', '🔁', 'Langganan bulanan', 'tagihan', 'simple', 'Langganan'], ['lain', '🧾', 'Tagihan rutin lainnya', 'tagihan', 'simple', ''],
+  ];
+  const billCatOf = (b) => BILL_CATS.find((c) => c[0] === b.cat) || null;
+  const WEEKDAYS = [['0', 'Minggu'], ['1', 'Senin'], ['2', 'Selasa'], ['3', 'Rabu'], ['4', 'Kamis'], ['5', 'Jumat'], ['6', 'Sabtu']];
+  const BILL_STATUS = { terlambat: ['Terlambat', 'late'], sebagian: ['Dibayar sebagian', ''], belum: ['Belum dibayar', ''], sudah: ['Sudah dibayar', ''], upcoming: ['Akan datang', ''], lunas: ['Lunas ✓', ''], nonaktif: ['Nonaktif', ''] };
+  const billStates = () => { const t = C.today(), pays = list('bpay'); return list('bill').map((b) => ({ b, st: C.billState(b, pays, t) })); };
 
   // ---------- state ----------
   function readJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
   let store = readJSON(LS);
   if (!C.validStore(store)) store = C.emptyStore();
   let cfg = readJSON(CFG) || {};
-  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, afCat: 'Semua', cardCat: null, cardShift: 0 };
+  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, afCat: 'Semua', cardCat: null, cardShift: 0, billCat: 'Semua', billSt: 'Semua' };
   let persistMsg = 'memeriksa…';
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((g) => { persistMsg = g ? 'aktif ✓' : 'belum diberikan browser'; }).catch(() => { persistMsg = 'tidak tersedia'; }); else persistMsg = 'tidak didukung';
   let syncMsg = '', syncing = false, syncAgain = false, syncTimer = null, ignorePop = false;
@@ -367,30 +381,81 @@
     });
   }
   // --- Rumah: tagihan ---
-  function billForm(b) {
+  function billCatMenu() { openMenu('Jenis tagihan / angsuran', BILL_CATS.map((c) => ({ label: c[1] + ' ' + c[2], fn: () => billForm({}, c[0]) }))); }
+  function billForm(b, catKey) {
     b = b || {};
-    openForm(b.id ? 'Ubah tagihan' : 'Tagihan rutin baru', [
-      { k: 'name', label: 'Nama tagihan / kewajiban', req: true, list: billItems().map((x) => x.name) }, { k: 'kind', label: 'Jenis', type: 'select', opts: BILL_KINDS }, { k: 'amountEst', label: 'Nominal (Rp; perkiraan untuk tagihan, pasti untuk kewajiban tetap)', type: 'amount' },
-      { k: 'dueDay', label: 'Jatuh tempo tiap tanggal (1–31)', type: 'number', req: true },
-      { k: 'paidThis', label: 'Sudah dibayar bulan ini', type: 'check' }, { k: 'notes', label: 'Catatan (nomor pelanggan tidak disarankan)', type: 'textarea' },
-    ], { name: b.name, kind: b.kind || 'tagihan', amountEst: b.amountEst || '', dueDay: b.dueDay, notes: b.notes }, (v) => {
-      const d = +v.dueDay; if (!(d >= 1 && d <= 31)) return 'Tanggal harus 1–31.';
-      const amt = v.amountEst === '' ? 0 : C.parseAmount(v.amountEst); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
-      C.put(store, 'bill', { id: b.id, name: v.name, kind: v.kind, amountEst: amt, dueDay: d, notes: v.notes, paidYM: v.paidThis ? nowYM() : b.paidYM, lastPaid: b.lastPaid }); commit();
-    }, b.id ? [{ label: 'Hapus tagihan', fn: () => { C.remove(store, b.id); commit(); } }] : null);
+    const cat = BILL_CATS.find((c) => c[0] === (b.cat || catKey)) || null, grp = cat ? cat[4] : 'simple';
+    if (grp === 'angsuran' && vOn() && !vOpen()) return vPrompt(() => billForm(b.id ? get('bill', b.id) : b, catKey));
+    const ref = b.refSec ? ((VAULT.cache.bills || {})[b.id] || '') : (b.ref || '');
+    const F = [{ k: 'name', label: 'Nama tagihan / kewajiban', req: true, list: cat && cat[5] ? [cat[5]] : billItems().map((x) => x.name) }];
+    if (!cat || cat[0] === 'lain') F.push({ k: 'kind', label: 'Jenis', type: 'select', opts: BILL_KINDS });
+    F.push({ k: 'amountEst', label: grp === 'angsuran' ? 'Nominal angsuran per periode (Rp)' : grp === 'arisan' ? 'Nominal iuran (Rp)' : 'Nominal (Rp; perkiraan bila berubah-ubah)', type: 'amount' });
+    if (grp === 'arisan') F.push({ k: 'freq', label: 'Frekuensi', type: 'select', opts: [['monthly', 'Bulanan'], ['weekly', 'Mingguan']] }, { k: 'dueWeekday', label: 'Bila mingguan: hari pembayaran', type: 'select', opts: WEEKDAYS });
+    F.push({ k: 'dueDay', label: grp === 'arisan' ? 'Bila bulanan: tanggal pembayaran (1–31)' : 'Jatuh tempo tiap tanggal (1–31)', type: 'number', req: grp !== 'arisan' });
+    if (grp === 'angsuran') F.push(
+      { k: 'creditor', label: 'Kreditur / lembaga (opsional)' }, { k: 'bank', label: 'Bank / penyedia pembiayaan (opsional)', list: BANKS }, { k: 'ref', label: 'Nomor kontrak / referensi (opsional, sensitif' + (vOn() ? ' — dienkripsi)' : ')') },
+      { k: 'total', label: cat && (cat[0] === 'haji' || cat[0] === 'umrah') ? 'Total target biaya (Rp)' : 'Total pinjaman / pembiayaan (Rp)', type: 'amount' }, { k: 'dp', label: 'Uang muka (Rp, opsional)', type: 'amount' },
+      { k: 'tenor', label: 'Jumlah angsuran / tenor (mis. 15 tahun = 180)', type: 'number' }, { k: 'startDate', label: 'Tanggal mulai (angsuran pertama)', type: 'date' },
+      { k: 'endDate', label: cat && (cat[0] === 'haji' || cat[0] === 'umrah') ? 'Target pelunasan / tanggal selesai' : 'Tanggal selesai (kosongkan: dihitung dari tenor)', type: 'date' },
+      { k: 'instBefore', label: 'Angsuran yang SUDAH dibayar sebelum memakai aplikasi (jumlah kali)', type: 'number' }, { k: 'paidBefore', label: 'Total yang sudah dibayar sebelumnya (Rp, bila tanpa tenor mis. Haji)', type: 'amount' },
+      { k: 'extra', label: 'Bunga / biaya tambahan (opsional, catatan)' });
+    if (grp === 'arisan') F.push({ k: 'tenor', label: 'Jumlah periode arisan (opsional)', type: 'number' }, { k: 'startDate', label: 'Mulai (pembayaran pertama)', type: 'date' });
+    if (grp === 'simple') F.push({ k: 'startDate', label: 'Mulai berlaku (opsional)', type: 'date' }, { k: 'endDate', label: 'Berakhir (opsional)', type: 'date' });
+    if (b.id) F.push({ k: 'active', label: 'Template aktif (hasilkan jadwal berikutnya)', type: 'check' }); else F.push({ k: 'paidThis', label: 'Periode ini sudah dibayar (tanpa mencatat transaksi)', type: 'check' });
+    F.push({ k: 'notes', label: grp === 'arisan' ? 'Catatan (giliran / penerimaan)' : 'Catatan', type: 'textarea' });
+    const init = { name: b.name || (cat ? cat[5] : ''), kind: b.kind || 'tagihan', amountEst: b.amountEst || '', freq: b.freq || 'monthly', dueWeekday: String(b.dueWeekday == null ? 6 : b.dueWeekday), dueDay: b.dueDay, creditor: b.creditor, bank: b.bank, ref, total: b.total || '', dp: b.dp || '', tenor: b.tenor || '', startDate: b.startDate, endDate: b.endDate, instBefore: b.instBefore || '', paidBefore: b.paidBefore || '', extra: b.extra, active: b.active !== false, notes: b.notes };
+    openForm((b.id ? 'Ubah: ' : 'Baru: ') + (cat ? cat[2] : 'tagihan rutin'), F, init, (v) => {
+      const num = (x) => (x === '' || x == null ? 0 : C.parseAmount(x)), int = (x) => (x === '' || x == null ? 0 : /^\d{1,4}$/.test(String(x)) ? +x : null);
+      const weekly = grp === 'arisan' && v.freq === 'weekly', day = +v.dueDay;
+      if (!weekly && !(day >= 1 && day <= 31)) return 'Tanggal harus 1–31.';
+      const amt = num(v.amountEst); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
+      const data = { id: b.id, name: v.name, cat: cat ? cat[0] : (b.cat || ''), kind: cat && cat[0] !== 'lain' ? cat[3] : (v.kind || b.kind || 'tagihan'), amountEst: amt, notes: v.notes };
+      if (grp === 'arisan') { data.freq = v.freq; data.dueWeekday = +v.dueWeekday; } else if (!b.freq) data.freq = 'monthly';
+      if (!weekly) data.dueDay = day; else if (b.dueDay) data.dueDay = b.dueDay;
+      for (const k of ['startDate', 'endDate']) if (k in v) { if (v[k] && !/^\d{4}-\d{2}-\d{2}$/.test(v[k])) return 'Format tanggal tidak valid.'; data[k] = v[k]; }
+      if (data.startDate && data.endDate && data.endDate < data.startDate) return 'Tanggal selesai tidak boleh sebelum tanggal mulai.';
+      if ('tenor' in v) { const t = int(v.tenor); if (t == null) return 'Tenor harus bilangan bulat.'; data.tenor = t; }
+      if ('instBefore' in v) { const t = int(v.instBefore); if (t == null) return 'Angsuran sebelumnya harus bilangan bulat.'; if (data.tenor && t > data.tenor) return 'Angsuran sebelumnya tidak boleh melebihi tenor.'; data.instBefore = t; }
+      for (const k of ['total', 'dp', 'paidBefore']) if (k in v) { const n = num(v[k]); if (n == null) return 'Nominal harus bilangan bulat rupiah.'; data[k] = n; }
+      for (const k of ['creditor', 'bank', 'extra']) if (k in v) data[k] = v[k];
+      if (b.id) data.active = !!v.active; else { data.active = true; if (v.paidThis) data.paidYM = nowYM(); }
+      const sched = b.id && ['amountEst', 'dueDay', 'freq', 'dueWeekday', 'startDate', 'endDate', 'tenor'].some((k) => k in data && String(data[k] == null ? '' : data[k]) !== String(b[k] == null ? '' : b[k]));
+      const hasHist = b.id && list('bpay').some((x) => x.billId === b.id && !x.void);
+      const save = () => {
+        if (!('ref' in v)) { C.put(store, 'bill', data); commit(); return; }
+        if (!vOn()) { C.put(store, 'bill', Object.assign(data, { ref: v.ref })); commit(); return; }
+        if (!v.ref && !b.refSec) { C.put(store, 'bill', data); commit(); return; }
+        if (!VAULT.key) return toast('Terkunci lagi. Buka dengan password lalu ulangi.');
+        const rec = C.put(store, 'bill', Object.assign(data, { ref: '' }));
+        Vault.seal(VAULT.key, { ref: v.ref }).then((sc) => { C.put(store, 'bill', { id: rec.id, refSec: sc }); VAULT.cache.bills[rec.id] = v.ref; commit(); });
+      };
+      if (sched && hasHist) setTimeout(() => confirmBox('Perubahan jadwal/nominal hanya berlaku untuk tagihan MENDATANG. Riwayat pembayaran yang sudah tercatat tidak berubah.', save), 0); else save();
+    }, b.id ? [{ label: 'Hapus template (riwayat tetap)', fn: () => { billDeleteConfirm(b); return false; } }] : null,
+    cat && cat[0] === 'arisan' ? 'Arisan mingguan: pilih Frekuensi Mingguan dan harinya. Sisa kewajiban dihitung dari sisa periode × iuran.' : grp === 'angsuran' ? 'Sisa kewajiban: bila ada tenor = sisa angsuran × nominal; bila tidak ada tenor = total − uang muka − yang sudah dibayar. Isi hanya yang Anda tahu.' : '');
   }
-  function billPayForm(b) {
-    const accs = [['', 'Jangan catat ke Uang']].concat(accOpts());
-    openForm('Bayar: ' + b.name, [
-      { k: 'date', label: 'Tanggal bayar', type: 'date', req: true }, { k: 'amount', label: 'Nominal (Rp)', type: 'amount' }, { k: 'acc', label: 'Catat ke akun', type: 'select', opts: accs },
-    ], { date: C.today(), amount: b.amountEst || '', acc: accs.length > 1 ? accs[1][0] : '' }, (v) => {
+  function billDeleteConfirm(b) { setTimeout(() => confirmBox('Hapus template "' + b.name + '"? Riwayat pembayaran dan transaksi keuangan yang sudah tercatat TIDAK dihapus; hanya jadwal ke depan yang berhenti.', () => { C.remove(store, b.id); commit(); ui.stack = ui.stack.filter((x) => !(x.n === 'tagihandetail' && x.p.id === b.id)); render(); toast('Template dihapus; riwayat tetap tersimpan'); }), 0); }
+  // mode: 'full' | 'part' | 'payoff'
+  function billPayForm(b, mode) {
+    mode = mode || 'full'; const t = C.today(), pays = list('bpay'), st = C.billState(b, pays, t);
+    if (!st.next) return toast('Tidak ada tagihan yang perlu dibayar.');
+    const accs = [['', 'Jangan catat ke Uang']].concat(accOpts()), left = st.partial > 0 ? Math.max(0, (+b.amountEst || 0) - st.partial) : (+b.amountEst || 0);
+    const initAmt = mode === 'payoff' ? (st.remaining != null ? st.remaining : '') : mode === 'part' ? '' : (left || '');
+    const title = mode === 'payoff' ? 'Lunasi sekarang: ' : mode === 'part' ? 'Bayar sebagian: ' : 'Bayar: ';
+    const info = 'Membayar ' + (st.instNext ? 'angsuran ke-' + st.instNext + ' ' : 'tagihan ') + 'jatuh tempo ' + fmtDate(st.next) + (mode === 'payoff' ? '. Pelunasan menutup template ini (tidak ada jadwal berikutnya).' : '.') + (st.partial > 0 ? ' Sudah dibayar sebagian ' + rp(st.partial) + '.' : '');
+    openForm(title + b.name, [
+      { k: 'date', label: 'Tanggal bayar sebenarnya', type: 'date', req: true }, { k: 'amount', label: mode === 'part' ? 'Nominal yang dibayar sekarang (Rp)' : 'Nominal (Rp)', type: 'amount', req: mode !== 'full' }, { k: 'acc', label: 'Catat ke akun', type: 'select', opts: accs },
+    ], { date: t, amount: initAmt, acc: accs.length > 1 ? accs[1][0] : '' }, (v) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v.date)) return 'Tanggal tidak valid.';
       const amt = v.amount === '' ? 0 : C.parseAmount(v.amount); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
-      const period = C.billNext(b, C.today()).slice(0, 7);
-      C.put(store, 'bill', { id: b.id, paidYM: period, lastPaid: v.date, lastAmount: amt });
-      if (v.acc && amt > 0) C.put(store, 'tx', { kind: 'expense', amount: amt, acc: v.acc, to: '', cat: BILL_CAT[b.kind] || 'Tagihan', date: v.date, note: b.name, cid: C.uid() });
-      commit(); toast('Tagihan dibayar ✓');
-    });
+      if (mode !== 'full' && !(amt > 0)) return 'Isi nominal pembayaran.';
+      const cur = get('bill', b.id); if (!cur) return 'Template sudah tidak ada.';
+      const plan = C.billPayPlan(cur, list('bpay'), { date: v.date, amount: amt, part: mode === 'part', payoff: mode === 'payoff', today: C.today() });
+      if (plan.error) return plan.error;
+      C.applyBillPay(store, cur, plan, { date: v.date, accId: v.acc, cat: BILL_CAT[cur.kind] || 'Tagihan', nowISO: new Date().toISOString() });
+      commit(); toast(mode === 'payoff' ? 'Lunas ✓ — template ditutup' : plan.part ? 'Pembayaran sebagian dicatat ✓' : 'Tagihan dibayar ✓' + (plan.late ? ' (terlambat)' : ''));
+    }, null, info);
   }
+  function billVoidConfirm(payId) { const p = get('bpay', payId); if (!p) return; confirmBox('Batalkan pembayaran ' + rp(p.amount) + ' (' + fmtDate(p.date) + ')? Riwayat dan transaksinya ditandai batal (tidak dihapus), tagihannya kembali belum dibayar.', () => { C.voidBillPay(store, payId, C.today(), new Date().toISOString()); commit(); toast('Pembayaran dibatalkan'); }); }
   function billTemplateForm() {
     const items = billItems();
     openForm('Pilih tagihan & kewajiban tetap', items.map((x, i) => ({ k: 'b' + i, label: x.name + (x.kind === 'tagihan' ? '' : x.kind === 'wajib' ? ' (kewajiban tetap)' : ' (cicilan)'), type: 'check' })).concat([{ k: 'dueDay', label: 'Tanggal jatuh tempo sementara (1–31, ubah nanti per item)', type: 'number', req: true }]), { dueDay: 20 }, (v) => {
@@ -698,7 +763,7 @@
   // ---------- kunci dokumen penting: enkripsi nyata (vault.js = WebCrypto PBKDF2 + AES-GCM) ----------
   // Yang dienkripsi: nomor/catatan/lokasi dokumen, nomor identitas anggota, foto scan dokumen & brankas.
   // Judul dokumen & tanggal berlaku TIDAK dienkripsi agar pengingat tetap jalan (di Beranda/kalender judulnya disamarkan).
-  const VAULT = { key: null, cache: { docs: {}, ids: {} }, hiddenAt: 0, fails: 0, until: 0 };
+  const VAULT = { key: null, cache: { docs: {}, ids: {}, bills: {} }, hiddenAt: 0, fails: 0, until: 0 };
   const AUTOLOCK_MS = 120000;
   const vMeta = () => { const m = store.rec.vault; return m && !m._d ? m : null; };
   const vOn = () => !!vMeta(), vOpen = () => !!VAULT.key;
@@ -706,12 +771,13 @@
   const idsOf = (p) => (p.idsSec ? (VAULT.cache.ids[p.id] || []) : (p.ids || []));
   const lockCard = (what) => `<div class="card pad" style="text-align:center"><div style="font-size:2rem">🔒</div><div class="t">${esc(what)} terkunci</div><div class="s">Masukkan password untuk melihat atau menyalin.</div><button class="btn full" data-a="vUnlock" style="margin-top:10px">🔓 Buka dengan password</button></div>`;
   async function vLoadCache() {
-    const c = { docs: {}, ids: {} };
+    const c = { docs: {}, ids: {}, bills: {} };
     for (const d of list('doc')) if (d.sec) { const o = await Vault.open(VAULT.key, d.sec); if (o) c.docs[d.id] = o; }
     for (const p of list('person')) if (p.idsSec) { const o = await Vault.open(VAULT.key, p.idsSec); if (o) c.ids[p.id] = o; }
+    for (const b of list('bill')) if (b.refSec) { const o = await Vault.open(VAULT.key, b.refSec); if (o) c.bills[b.id] = o.ref || ''; }
     VAULT.cache = c;
   }
-  function vLock(msg) { VAULT.key = null; VAULT.cache = { docs: {}, ids: {} }; ui.reveal = {}; closeDlg(); render(); if (msg !== false) toast(msg || '🔒 Dokumen terkunci'); }
+  function vLock(msg) { VAULT.key = null; VAULT.cache = { docs: {}, ids: {}, bills: {} }; ui.reveal = {}; closeDlg(); render(); if (msg !== false) toast(msg || '🔒 Dokumen terkunci'); }
   // jalankan `then` setelah brankas terbuka (langsung bila kunci belum diaktifkan)
   function vGate(then) { if (!vOn() || vOpen()) return then(); vPrompt(then); }
   function vPrompt(then) {
@@ -771,6 +837,10 @@
       if (toEnc && !p.idsSec && (p.ids || []).length) { const idsSec = await Vault.seal(key, p.ids); C.put(store, 'person', { id: p.id, idsSec, ids: [] }); n++; }
       else if (!toEnc && p.idsSec) { const o = await Vault.open(key, p.idsSec); if (o) { C.put(store, 'person', { id: p.id, idsSec: '', ids: o }); n++; } }
     }
+    for (const b of list('bill')) {
+      if (toEnc && !b.refSec && b.ref) { const refSec = await Vault.seal(key, { ref: b.ref }); C.put(store, 'bill', { id: b.id, refSec, ref: '' }); n++; }
+      else if (!toEnc && b.refSec) { const o = await Vault.open(key, b.refSec); if (o) { C.put(store, 'bill', { id: b.id, refSec: '', ref: o.ref || '' }); n++; } }
+    }
     for (const f of list('pfile').filter((x) => x.docId || x.personId)) {
       let blob = null; try { blob = await IDB.get(f.id); } catch (e) { /* lewati */ }
       if (!blob) continue;
@@ -795,7 +865,7 @@
   }
   function vOff() {
     vGate(() => confirmBox('Matikan kunci? Semua nomor, catatan, dan foto dokumen akan disimpan POLOS lagi di HP ini.', async () => {
-      try { toast('Membuka enkripsi…'); await vMigrate(false); C.remove(store, 'vault'); VAULT.key = null; VAULT.cache = { docs: {}, ids: {} }; commit(); toast('Kunci dimatikan'); } catch (e) { toast('Gagal: ' + e.message); }
+      try { toast('Membuka enkripsi…'); await vMigrate(false); C.remove(store, 'vault'); VAULT.key = null; VAULT.cache = { docs: {}, ids: {}, bills: {} }; commit(); toast('Kunci dimatikan'); } catch (e) { toast('Gagal: ' + e.message); }
     }));
   }
   // kunci otomatis 2 menit setelah aplikasi ditinggalkan (tab disembunyikan / pindah aplikasi)
@@ -1030,7 +1100,7 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${C.isBirthdayTitle(o.ev.title) ? '🎂 ' : ''}${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
+const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
   const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
@@ -1225,7 +1295,7 @@ const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
     const flagged = accs.filter((a) => a.emergency), pool = flagged.length ? flagged : accs.filter((a) => a.type === 'kas' || a.type === 'bank' || a.type === 'ewallet');
     const emergency = pool.reduce((s, a) => s + Math.max(0, bal[a.id] || 0), 0);
     let avg = C.avgMonthly(txs, ymShift(cur, -1), 3); if (!avg.months) avg = C.avgMonthly(txs, cur, 1);
-    const debtPay = list('bill').filter((b) => b.kind === 'cicilan').reduce((s, b) => s + (b.amountEst || 0), 0);
+    const debtPay = list('bill').filter((b) => C.billLive(b) && b.kind === 'cicilan').reduce((s, b) => s + (b.amountEst || 0), 0);
     const r = C.healthLevel({ mode: modeOf() || 'pekerja', netWorth: C.netWorth(accs, txs), avgIncome: avg.income, avgExpense: avg.expense, emergency, debtPay, hasData: avg.months > 0 });
     return Object.assign(r, { flagged: flagged.length > 0, emergency, avg });
   }
@@ -1273,7 +1343,7 @@ const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
   }
   const lastDay = (ym) => new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0).getDate();
   function recapText(ym) {
-    const txs = list('tx'), rep = C.monthReport(txs, ym), top = C.topSlices(rep.byCat, 5), h = healthInfo(), pend = list('bill').filter((b) => b.paidYM !== ym);
+    const txs = list('tx'), rep = C.monthReport(txs, ym), top = C.topSlices(rep.byCat, 5), h = healthInfo(), pend = billStates().filter((x) => ['terlambat', 'belum', 'sebagian'].includes(x.st.status)).map((x) => x.b);
     let t = `📊 Rekap keuangan ${ymLabel(ym)}${ownerName() ? ' — ' + ownerName() : ''}\n\nMasuk: ${rp(rep.income)}\nKeluar: ${rp(rep.expense)}\nSisa: ${rp(rep.income - rep.expense)}\n`;
     if (top.length) t += '\nPengeluaran terbesar:\n' + top.map((s, i) => `${i + 1}. ${s.name} ${rp(s.amount)} (${pc(s.pct)})`).join('\n') + '\n';
     if (pend.length) t += '\nBelum dibayar bulan ini:\n' + pend.slice(0, 8).map((b) => `• ${b.name}${b.amountEst ? ' ' + rp(b.amountEst) : ''} (tgl ${b.dueDay})`).join('\n') + '\n';
@@ -1297,8 +1367,8 @@ const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
       const totAsset = Math.max(1, ad.assets);
       h += `<h2>Rekening & sumber dana</h2><div class="card">${accs.length ? accs.map((a) => { const v = bal[a.id] || 0; return `<div class="row" data-a="accEdit" data-id="${a.id}">${ic('c2', a.type === 'bank' ? '🏦' : a.type === 'ewallet' ? '📱' : a.type === 'kartu' ? '💳' : a.type === 'invest' ? '📈' : '👛')}<div class="grow"><div class="t">${esc(a.name)}${a.emergency ? ' <span class="tag">🛟 darurat</span>' : ''}</div><div class="s">${esc(({ kas: 'Kas', bank: 'Bank', ewallet: 'E-wallet', kartu: 'Kartu kredit', invest: 'Investasi' })[a.type] || a.type)}</div>${v > 0 ? `<div class="pb" style="margin-top:4px;height:5px"><i style="width:${Math.min(100, Math.round((v * 100) / totAsset))}%"></i></div>` : ''}</div><b class="${v < 0 ? 'neg' : ''}">${rp(v)}</b></div>`; }).join('') : '<div class="empty">Belum ada rekening.<br>Tambahkan 3–4 rekening/e-wallet yang Anda pakai.</div>'}</div><div class="btns"><button class="btn" data-a="accAdd">+ Rekening</button><button class="btn alt" data-a="tpl" data-k="acc">✨ Dari template</button></div>`;
       h += `<h2>Bulan ini</h2><div class="card pad"><div class="row" style="border:0;padding:0"><div class="grow s">Masuk<div class="t" style="color:var(--ok)">${rp(rep.income)}</div></div><div class="grow s">Keluar<div class="neg t">${rp(rep.expense)}</div></div><div class="grow s">Sisa<div class="t ${sgn(rep.income - rep.expense)}">${rp(rep.income - rep.expense)}</div></div></div></div>`;
-      const bills = list('bill').sort((a, b) => a.dueDay - b.dueDay), fixed = bills.filter((b) => b.kind === 'wajib' || b.kind === 'cicilan'), fsum = fixed.reduce((s, b) => s + (b.amountEst || 0), 0), unpaid = bills.filter((b) => b.paidYM !== ym);
-      h += `<h2>Kewajiban & tagihan</h2><div class="card pad"><div class="kv"><span>Kewajiban tetap / bulan</span><b>${rp(fsum)}</b></div><div class="kv"><span>Belum dibayar bulan ini</span><b>${unpaid.length} dari ${bills.length}</b></div>${unpaid.slice(0, 4).map((b) => `<div class="kv"><span>${esc(b.name)} <span class="s">tgl ${b.dueDay}</span></span><span>${b.amountEst ? rp(b.amountEst) : '—'}</span></div>`).join('')}<div style="margin-top:8px"><button class="btn alt full" data-a="nav" data-to="tagihan">Kelola tagihan & kewajiban ›</button></div></div>`;
+      const bills = list('bill').filter((b) => C.billLive(b)).sort((a, b) => (+a.dueDay || 0) - (+b.dueDay || 0)), fixed = bills.filter((b) => b.kind === 'wajib' || b.kind === 'cicilan'), fsum = fixed.reduce((s, b) => s + (b.amountEst || 0), 0), unpaidSet = new Set(billStates().filter((x) => ['terlambat', 'belum', 'sebagian'].includes(x.st.status)).map((x) => x.b.id)), unpaid = bills.filter((b) => unpaidSet.has(b.id));
+      h += `<h2>Kewajiban & tagihan</h2><div class="card pad"><div class="kv"><span>Kewajiban tetap / bulan</span><b>${rp(fsum)}</b></div><div class="kv"><span>Belum dibayar bulan ini</span><b>${unpaid.length} dari ${bills.length}</b></div>${unpaid.slice(0, 4).map((b) => `<div class="kv"><span>${esc(b.name)} <span class="s">${b.freq === 'weekly' ? 'tiap ' + WEEKDAYS[+b.dueWeekday || 0][1].toLowerCase() : 'tgl ' + b.dueDay}</span></span><span>${b.amountEst ? rp(b.amountEst) : '—'}</span></div>`).join('')}<div style="margin-top:8px"><button class="btn alt full" data-a="nav" data-to="tagihan">Kelola tagihan & kewajiban ›</button></div></div>`;
       const pts = []; for (let i = 5; i >= 0; i--) { const m = ymShift(nowYM(), -i), end = m === nowYM() ? today : m + '-' + String(lastDay(m)).padStart(2, '0'); pts.push({ label: MONTHS[+m.slice(5, 7) - 1].slice(0, 3), v: C.netWorthAt(accs, txs, end) }); }
       if (accs.length) h += `<h2>Kekayaan 6 bulan terakhir</h2><div class="card pad">${nwBars(pts)}</div>`;
       if (modeOf() === 'keluarga') {
@@ -1341,7 +1411,7 @@ const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
   function vMore() {
     const g = (title, rows) => `<h2>${title}</h2><div class="card">${rows.join('')}</div>`;
     const h = g('Rumah & catatan', [
-      mrow('c2', '🔧', 'Perawatan', 'Servis AC, kuras toren, dll.', 'perawatan'), mrow('c6', '🧾', 'Tagihan rutin', 'Listrik, internet, air, PBB', 'tagihan'),
+      mrow('c2', '🔧', 'Perawatan', 'Servis AC, kuras toren, dll.', 'perawatan'), mrow('c6', '🧾', 'Tagihan & angsuran', 'Listrik, internet, air, PBB', 'tagihan'),
       mrow('c4', '🚗', 'Kendaraan', 'Pajak, STNK, odometer, servis', 'kendaraan'), mrow('c1', '🛡️', 'Aset & garansi', 'Barang berharga dan masa garansi', 'aset'),
       mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
       mrow('c4', '📄', 'Dokumen penting', 'KK, akta, SIM, BPJS, sertifikat, polis, ijazah', 'dokumen', vOn() ? '<span class="bd">🔒</span>' : '')])
@@ -1391,14 +1461,47 @@ const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
       return { title: 'Kendaraan', sub: vs.length + ' kendaraan', html: h, add: () => vehForm() };
     },
     tagihan() {
-      const t = C.today(), bs = list('bill').map((b) => ({ b, due: C.billNext(b, t) })).sort((x, y) => C.cmp(x.due, y.due));
-      const total = list('bill').reduce((s, b) => s + (b.amountEst || 0), 0);
-      let h = `<div class="card hero pad"><div class="s">Perkiraan tagihan rutin per bulan</div><div class="big">${rp(total)}</div><div class="s">${list('bill').length} tagihan</div></div>`;
-      h += `<div class="card">${bs.length ? bs.map(({ b, due }) => {
-        const n = C.daysBetween(t, due), lvl = C.urgency(n, 5);
-        return `<div class="row">${ic(lvl === 'late' ? 'c3' : 'c6', '🧾')}<div class="grow" data-a="billEdit" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">Tiap tgl ${b.dueDay}${b.amountEst ? ' · ' + (!b.kind || b.kind === 'tagihan' ? '±' : '') + rp(b.amountEst) : ''}${b.kind === 'wajib' ? ' · tetap' : b.kind === 'cicilan' ? ' · cicilan' : ''}${b.lastPaid ? ' · terakhir ' + fmtDate(b.lastPaid) : ''}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${badge(due)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button></div></div>`;
-      }).join('') : '<div class="empty">Belum ada tagihan rutin.<br>Tambahkan listrik, internet, air, PBB, dan lainnya.</div>'}</div><button class="btn full" data-a="billAdd">+ Tagihan rutin</button><div style="height:10px"></div><button class="btn alt full" data-a="billTpl">✨ Tambah dari template</button><p class="note">"Bayar" menandai periode ini lunas dan, bila Anda pilih akun, langsung mencatat pengeluaran di tab Uang.</p>`;
-      return { title: 'Tagihan rutin', sub: '', html: h, add: () => billForm() };
+      const t = C.today(), ym = nowYM(), all = billStates(), m = C.billMonthSummary(list('bill'), list('bpay'), ym, t);
+      const cats = ['Semua'].concat(BILL_CATS.filter((c) => all.some((x) => x.b.cat === c[0])).map((c) => c[0]));
+      const stF = [['Semua', 'Semua'], ['terlambat', 'Terlambat'], ['belum', 'Belum dibayar'], ['sebagian', 'Sebagian'], ['sudah', 'Sudah dibayar'], ['lunas', 'Lunas'], ['nonaktif', 'Nonaktif']];
+      const shown = all.filter((x) => (ui.billCat === 'Semua' || x.b.cat === ui.billCat) && (ui.billSt === 'Semua' || x.st.status === ui.billSt || (ui.billSt === 'belum' && x.st.status === 'upcoming'))).sort((x, y) => C.cmp(x.st.next || '9999', y.st.next || '9999'));
+      const soon = all.filter((x) => x.st.next && C.daysBetween(t, x.st.next) >= 0 && C.daysBetween(t, x.st.next) <= 7 && C.billLive(x.b)), active = all.filter((x) => C.billLive(x.b) && x.st.status !== 'lunas');
+      const rem = active.filter((x) => x.st.remaining != null), remSum = rem.reduce((s, x) => s + x.st.remaining, 0);
+      let h = `<div class="card hero pad"><div class="s">Tagihan ${ymLabel(ym)}</div><div class="big">${rp(m.total)}</div><div class="kv"><span>Sudah dibayar</span><b>${rp(m.paid)}</b></div><div class="kv"><span>Belum dibayar</span><b>${rp(m.unpaid)}</b></div>${m.late ? `<div class="kv"><span>Terlambat</span><b style="color:var(--bad,#c0392b)">${rp(m.late)}</b></div>` : ''}</div>`;
+      if (soon.length) h += `<h2>Jatuh tempo 7 hari ke depan</h2><div class="card">${soon.map(({ b, st }) => `<div class="row" data-a="billOpen" data-id="${b.id}">${ic('c6', (billCatOf(b) || ['', '🧾'])[1])}<div class="grow"><div class="t">${esc(b.name)}</div><div class="s">${st.instNext ? 'Angsuran ke-' + st.instNext + ' · ' : ''}${rp(b.amountEst || 0)}</div></div>${badge(st.next)}</div>`).join('')}</div>`;
+      h += `<div class="card pad"><div class="kv"><span>Kewajiban aktif</span><b>${active.length}</b></div>${rem.length ? `<div class="kv"><span>Sisa kewajiban keseluruhan</span><b>${rp(remSum)}</b></div><div class="s">Dari ${rem.length} kewajiban yang datanya cukup untuk dihitung${active.length > rem.length ? ' (' + (active.length - rem.length) + ' lainnya tanpa total/tenor tidak dihitung)' : ''}.</div>` : '<div class="s">Isi total/tenor pada angsuran agar sisa kewajiban terhitung.</div>'}</div>`;
+      h += `<div class="chips">${cats.map((c) => `<button class="chip ${ui.billCat === c ? 'on' : ''}" data-a="set" data-k="billCat" data-v="${c}">${c === 'Semua' ? 'Semua jenis' : esc((BILL_CATS.find((x) => x[0] === c) || [0, '', c])[2])}</button>`).join('')}</div><div class="chips">${stF.map((x) => `<button class="chip ${ui.billSt === x[0] ? 'on' : ''}" data-a="set" data-k="billSt" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>`;
+      h += `<div class="card">${shown.length ? shown.map(({ b, st }) => {
+        const c = billCatOf(b), sm = BILL_STATUS[st.status] || ['', ''], tail = [];
+        if (b.freq === 'weekly') tail.push('tiap ' + WEEKDAYS[+b.dueWeekday || 0][1].toLowerCase()); else tail.push('tgl ' + b.dueDay);
+        if (b.amountEst) tail.push((!b.kind || b.kind === 'tagihan' ? '±' : '') + rp(b.amountEst));
+        if (+b.tenor > 0 && st.instNext) tail.push('angsuran ' + st.instNext + '/' + b.tenor); else if (+b.tenor > 0) tail.push('selesai ' + b.tenor + '/' + b.tenor);
+        if (st.remaining != null && st.remaining > 0) tail.push('sisa ' + rp(st.remaining));
+        const right = st.status === 'lunas' || st.status === 'nonaktif' ? `<span class="bd">${sm[0]}</span>` : `${st.status === 'terlambat' || st.status === 'sebagian' ? `<span class="bd ${sm[1]}">${sm[0]}</span>` : st.status === 'sudah' ? `<span class="bd">${sm[0]}</span>` : badge(st.next)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button>`;
+        return `<div class="row">${ic(st.status === 'terlambat' ? 'c3' : 'c6', c ? c[1] : '🧾')}<div class="grow" data-a="billOpen" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">${tail.join(' · ')}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${right}</div></div>`;
+      }).join('') : '<div class="empty">' + (all.length ? 'Tidak ada tagihan dengan filter ini.' : 'Belum ada tagihan rutin.<br>Tambahkan KPR, cicilan, arisan, listrik, internet, dan lainnya.') + '</div>'}</div><button class="btn full" data-a="billAdd">+ Tagihan / angsuran baru</button><div style="height:10px"></div><button class="btn alt full" data-a="billTpl">✨ Tambah cepat dari daftar</button><div style="height:10px"></div><button class="btn alt full" data-a="nav" data-to="riwayatbayar">🧾 Riwayat pembayaran</button><p class="note">Setiap jadwal otomatis tampil di Kalender. "Bayar" mencatat riwayat dan, bila Anda pilih akun, pengeluaran di tab Uang. Mengubah template hanya memengaruhi tagihan mendatang.</p>`;
+      return { title: 'Tagihan & angsuran', sub: active.length + ' aktif', html: h, add: () => billCatMenu() };
+    },
+    tagihandetail(pp) {
+      const b = get('bill', pp.id); if (!b) return null;
+      const t = C.today(), pays = list('bpay'), st = C.billState(b, pays, t), c = billCatOf(b), sm = BILL_STATUS[st.status] || ['', ''];
+      const mine = pays.filter((x) => x.billId === b.id).sort((x, y) => C.cmp(y.date || '', x.date || '') || C.cmp(y._u, x._u));
+      const key = 'bref' + b.id, ref = b.refSec ? (VAULT.cache.bills[b.id] || '') : (b.ref || ''), shown = ui.reveal[key];
+      const kv = (k, v) => v === '' || v == null ? '' : `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+      const tenor = +b.tenor || 0, pct = tenor > 0 ? Math.min(100, Math.round((st.instDone / tenor) * 100)) : null;
+      const up = []; { let d = st.next, g = 0; while (d && g++ < 3) { up.push(d); d = C.billOccAfter(b, d); const e = C.billEndDate(b); if (e && d > e) break; if (tenor && st.instDone + up.length >= tenor) break; } }
+      let h = `<div class="card hero pad"><div class="s">${c ? esc(c[2]) : 'Tagihan rutin'} · <span class="bd ${sm[1]}">${sm[0]}</span></div><div class="big">${esc(b.name)}</div>${kv('Nominal', b.amountEst ? rp(b.amountEst) : '')}${kv('Jatuh tempo berikut', st.next ? fmtDate(st.next) + ' (' + C.countdown(C.daysBetween(t, st.next)) + ')' : '—')}${tenor > 0 ? kv('Angsuran', (st.instNext ? 'ke-' + st.instNext : 'selesai') + ' dari ' + tenor) + kv('Sisa tenor', st.remainingInst + ' kali') : ''}${st.remaining != null ? kv('Sisa kewajiban', rp(st.remaining)) : ''}${+b.total > 0 ? kv('Total pinjaman / target', rp(b.total)) : ''}${+b.dp > 0 ? kv('Uang muka', rp(b.dp)) : ''}${kv('Dibayar lewat aplikasi', st.paidTotal ? rp(st.paidTotal) : '')}${+b.paidBefore > 0 ? kv('Dibayar sebelumnya', rp(b.paidBefore)) : ''}${pct != null ? `<div class="prog" style="height:8px;background:var(--soft);border-radius:99px;margin:8px 0"><div style="width:${pct}%;height:100%;background:var(--acc);border-radius:99px"></div></div><div class="s">${pct}% selesai</div>` : ''}${st.end ? kv('Selesai', fmtDate(st.end)) : ''}${kv('Kreditur', esc(b.creditor || ''))}${kv('Bank / penyedia', esc(b.bank || ''))}${b.extra ? kv('Bunga / biaya', esc(b.extra)) : ''}</div>`;
+      if (ref) h += `<div class="card pad inl" style="justify-content:space-between;align-items:center;gap:8px"><div><div class="s">Nomor kontrak / referensi</div><div class="t idn">${shown ? esc(ref) : esc(C.maskId(ref))}</div></div><button class="btn alt sm" data-a="idShow" data-key="${key}">${shown ? 'Sembunyikan' : 'Tampilkan'}</button></div>`;
+      else if (b.refSec) h += lockCard('Nomor kontrak');
+      if (C.billLive(b) && st.next) h += `<div class="card pad"><button class="btn full" data-a="billPay" data-id="${b.id}">Bayar ${st.instNext ? 'angsuran ke-' + st.instNext : 'sekarang'}</button><div style="height:8px"></div><button class="btn alt full" data-a="billPayPart" data-id="${b.id}">Bayar sebagian</button>${(tenor > 0 || +b.total > 0) ? `<div style="height:8px"></div><button class="btn alt full" data-a="billPayoff" data-id="${b.id}">Lunasi lebih awal</button>` : ''}</div>`;
+      if (up.length && C.billLive(b)) h += `<h2>Jadwal berikutnya</h2><div class="card">${up.map((d, i) => `<div class="row"><div class="grow"><div class="t">${fmtDate(d)}</div><div class="s">${st.instNext ? 'Angsuran ke-' + (st.instNext + i) : 'Jatuh tempo'}</div></div>${badge(d)}</div>`).join('')}</div>`;
+      h += `<h2>Riwayat pembayaran</h2><div class="card">${mine.length ? mine.map((x) => `<div class="row"><div class="grow"><div class="t">${rp(x.amount)}${x.void ? ' · dibatalkan' : ''}</div><div class="s">${fmtDate(x.date)}${x.instNo ? ' · angsuran ke-' + x.instNo : ''}${x.part ? ' · sebagian' : ''}${x.payoff ? ' · pelunasan' : ''}${x.late && !x.void ? ' · terlambat' : ''} · untuk ${fmtDate(x.occ)}</div></div>${x.void ? '' : `<button class="btn alt sm" data-a="billVoid" data-id="${x.id}">Batalkan</button>`}</div>`).join('') : '<div class="empty">Belum ada pembayaran tercatat.</div>'}</div>`;
+      h += `<div class="card pad"><button class="btn alt full" data-a="billEdit" data-id="${b.id}">Ubah template</button><div style="height:8px"></div><button class="btn alt full" data-a="billToggle" data-id="${b.id}">${b.active === false ? 'Aktifkan lagi' : 'Hentikan template (nonaktif)'}</button><div style="height:8px"></div><button class="btn bad full" data-a="billDel" data-id="${b.id}">Hapus template…</button></div>`;
+      return { title: b.name, sub: sm[0], html: h };
+    },
+    riwayatbayar() {
+      const mine = list('bpay').sort((x, y) => C.cmp(y.date || '', x.date || '') || C.cmp(y._u, x._u)), tot = mine.filter((x) => !x.void).reduce((s, x) => s + (x.amount || 0), 0);
+      return { title: 'Riwayat pembayaran tagihan', sub: mine.length + ' catatan', html: `<div class="card hero pad"><div class="s">Total dibayar (tidak termasuk yang dibatalkan)</div><div class="big">${rp(tot)}</div></div><div class="card">${mine.length ? mine.map((x) => { const b = get('bill', x.billId); return `<div class="row"><div class="grow"${b ? ` data-a="billOpen" data-id="${b.id}"` : ''}><div class="t">${esc(x.name || 'Tagihan')}${b ? '' : ' <span class="s">(template dihapus)</span>'}</div><div class="s">${fmtDate(x.date)} · ${rp(x.amount)}${x.instNo ? ' · angsuran ke-' + x.instNo : ''}${x.part ? ' · sebagian' : ''}${x.payoff ? ' · pelunasan' : ''}${x.void ? ' · dibatalkan' : ''}</div></div></div>`; }).join('') : '<div class="empty">Belum ada pembayaran.</div>'}</div>` };
     },
     aset() {
       const cats = ['Semua'].concat(Object.keys(ASSET_EMOJI));
@@ -1674,7 +1777,10 @@ const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
     planOpen(d) { go('planDetail', { id: d.id }); }, planEdit(d) { planForm(get('plan', d.id)); }, planDone(d) { const p = get('plan', d.id); if (p) planDoneForm(p); },
     vehAdd() { vehForm(); }, vehEdit(d) { vehForm(get('veh', d.id)); }, odoUpd(d) { odoForm(get('veh', d.id)); },
     vehPlan(d) { planForm(null, { vehicleId: d.id, group: 'kendaraan', every: 6, unit: 'month' }); }, vehTpl(d) { templateForm(d.id); },
-    billAdd() { billForm(); }, billTpl() { billTemplateForm(); }, billEdit(d) { billForm(get('bill', d.id)); }, billPay(d) { const b = get('bill', d.id); if (b) billPayForm(b); },
+    billAdd() { billCatMenu(); }, billTpl() { billTemplateForm(); }, billEdit(d) { billForm(get('bill', d.id)); }, billPay(d) { const b = get('bill', d.id); if (b) billPayForm(b, 'full'); },
+    billPayPart(d) { const b = get('bill', d.id); if (b) billPayForm(b, 'part'); }, billPayoff(d) { const b = get('bill', d.id); if (b) billPayForm(b, 'payoff'); },
+    billOpen(d) { go('tagihandetail', { id: d.id }); }, billVoid(d) { billVoidConfirm(d.id); }, billDel(d) { const b = get('bill', d.id); if (b) billDeleteConfirm(b); },
+    billToggle(d) { const b = get('bill', d.id); if (!b) return; C.put(store, 'bill', { id: b.id, active: b.active === false }); commit(); toast(b.active === false ? 'Template aktif lagi' : 'Template dihentikan; tidak ada jadwal baru'); },
     assetAdd() { assetForm(); }, assetEdit(d) { assetForm(get('asset', d.id)); },
     invAdd() { invForm(); }, invEdit(d) { invForm(get('inv', d.id)); },
     invInc(d) { const i = get('inv', d.id); if (i) { C.put(store, 'inv', { id: i.id, qty: (+i.qty || 0) + 1 }); commit(); } },

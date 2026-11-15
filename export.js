@@ -42,8 +42,9 @@
       out.push({ name: 'Akun', cols: [S('Nama'), S('Tipe'), M('Saldo awal'), M('Saldo sekarang'), S('Dana darurat')], rows: sortBy(accs, (a) => a.name || '').map((a) => [a.name, ACC_TYPE[a.type] || a.type || '', a.opening || 0, bal[a.id] || 0, a.emergency ? 'Ya' : '']) });
       const bs = C.budgetStatus(L('budget'), C.monthReport(txs, ym));
       if (bs.length) out.push({ name: 'Anggaran', cols: [S('Kategori'), M('Batas'), M('Terpakai'), N('% terpakai')], rows: bs.map((b) => [b.cat, b.limit, b.spent, b.pct]), note: 'Periode ' + ym });
-      const bills = L('bill');
-      if (bills.length) out.push({ name: 'Tagihan & kewajiban', cols: [S('Nama'), S('Jenis'), M('Perkiraan'), N('Tgl jatuh tempo'), S('Sudah dibayar bulan ' + ym)], rows: sortBy(bills, (b) => +b.dueDay || 0).map((b) => [b.name, b.kind || 'tagihan', b.amountEst || 0, +b.dueDay || 0, b.paidYM === ym ? 'Ya' : 'Belum']) });
+      const bills = L('bill'), bpays = L('bpay');
+      if (bills.length) out.push({ name: 'Tagihan & kewajiban', cols: [S('Nama'), S('Jenis'), M('Nominal'), S('Jadwal'), N('Angsuran dibayar'), N('Tenor'), M('Sisa kewajiban'), S('Status')], rows: sortBy(bills, (b) => +b.dueDay || 0).map((b) => { const st = C.billState(b, bpays, today); return [b.name, b.kind || 'tagihan', b.amountEst || 0, b.freq === 'weekly' ? 'Mingguan, hari ke-' + (+b.dueWeekday || 0) : 'Tgl ' + (+b.dueDay || 0), st.instDone, +b.tenor || 0, st.remaining == null ? '' : st.remaining, st.status]; }), note: 'Nomor kontrak tidak diekspor.' });
+      if (bpays.length) out.push({ name: 'Riwayat bayar tagihan', cols: [S('Tanggal bayar'), S('Tagihan'), M('Jumlah'), N('Angsuran ke'), S('Untuk jatuh tempo'), S('Keterangan')], rows: sortBy(bpays, (x) => x.date || '').map((x) => [x.date || '', x.name || '', x.amount || 0, x.instNo || '', x.occ || '', [x.part ? 'sebagian' : '', x.payoff ? 'pelunasan' : '', x.late ? 'terlambat' : '', x.void ? 'dibatalkan' : ''].filter(Boolean).join(', ')]) });
       const gc = L('gc');
       const goals = L('goal');
       if (goals.length) out.push({ name: 'Tujuan keuangan', cols: [S('Tujuan'), M('Target'), M('Terkumpul'), N('% tercapai'), S('Tenggat'), S('Status')], rows: goals.map((g) => {
