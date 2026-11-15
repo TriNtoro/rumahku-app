@@ -50,3 +50,9 @@ Tidak ada di folder yang diaudit.
 | F0 Fondasi (monorepo, DB, RLS, CI) | NEEDS VERIFICATION | — | Repo `TriNtoro/rumahku-one` tidak dapat diakses; Actions kosong menurut screenshot pemilik |
 | F1–F6 (auth lanjutan, RBAC, task/kalender server, dokumen MinIO, keuangan server, E2EE, Berdua) | NEEDS VERIFICATION | — | Tidak diaudit |
 | Google Calendar dua arah, Web Push, ClamAV, webhook | PLANNED | — | Tidak ada di Lite |
+
+## v0.5.5 — Kunci dokumen penting (2026-11-15)
+- Dokumen penting dikelompokkan (Personal / Properti-Aset / Pendidikan-Karier / Lainnya) dengan template lengkap (KK, KTP, NPWP, Akta, SIM A/C, BPJS, sertifikat, BPKB/STNK, polis, ijazah, sertifikat pelatihan). Link dari Lainnya → Pribadi.
+- Enkripsi nyata (vault.js: PBKDF2 600k → AES-256-GCM, DEK dibungkus password + kode pemulihan). Auto-kunci 2 menit setelah app ditinggalkan. Lihat docs/security/crypto-design.md.
+- Terenkripsi: nomor/lokasi/catatan dokumen, nomor identitas anggota, foto dokumen & brankas. Tidak: judul & tanggal berlaku (disamarkan di Beranda/kalender).
+- Tes: 60 unit (node --test test/core.test.mjs test/export.test.mjs test/vault.test.mjs) + UI t14 + regresi lama hijau.

@@ -75,3 +75,6 @@ store = { v: 1, rec: { [id]: { id, _t:<tipe>, _u:<ISO waktu ubah>, _d?:<ISO wakt
 - Apakah perlu mekanisme versi skema/migrasi sebelum ada perubahan tak-aditif.
 - Memecah `app.js` per modul (tanpa build, mis. beberapa `<script>`) atau tetap satu berkas.
 - Pengadopsian lint/tes UI sebagai bagian repo (`NEXT_ROADMAP.md`).
+
+## Kripto brankas (v0.5.5)
+WebCrypto saja, DEK dibungkus ganda (password & recovery), ganti password = rewrap. Rinci: docs/security/crypto-design.md.

@@ -306,7 +306,8 @@
     L('asset').forEach((a) => {
       if (a.warrantyUntil && a.warrantyUntil >= todayS) push('warranty', '🛡️', 'Garansi ' + a.name + ' berakhir', a.warrantyUntil, 'aset', 30);
     });
-    L('doc').forEach((d) => d.expiry && push('doc', '📄', d.title + ' kedaluwarsa', d.expiry, 'dokumen', 60));
+    const vaultOn = !!(store.rec.vault && !store.rec.vault._d); // brankas aktif: judul dokumen disamarkan
+    L('doc').forEach((d) => d.expiry && push('doc', '📄', (vaultOn ? 'Dokumen penting' : d.title) + ' kedaluwarsa', d.expiry, 'dokumen', 60));
     L('inv').forEach((i) => i.expiry && push('invexp', '🥫', i.name + ' kedaluwarsa', i.expiry, 'stok', 14));
     const low = lowStock(L('inv'));
     low.forEach((i) => out.push({ kind: 'low', icon: '📦', text: i.name + ' hampir habis', date: todayS, n: 0, level: 'soon', go: 'stok' }));
@@ -490,7 +491,8 @@
     L('plan').forEach((p) => push(p.nextDue, 'plan', '🔧', p.name, 'perawatan', p.vehicleId ? 'kendaraan' : 'perawatan'));
     L('veh').forEach((v) => { push(v.pajakDue, 'veh', '🚗', 'Pajak ' + v.name, 'jatuh tempo', 'kendaraan'); push(v.stnkDue, 'veh', '🚗', 'STNK ' + v.name, 'jatuh tempo', 'kendaraan'); });
     L('asset').forEach((a) => push(a.warrantyUntil, 'asset', '🛡️', 'Garansi habis: ' + a.name, '', 'aset'));
-    L('doc').forEach((d) => push(d.expiry, 'doc', '📄', 'Berlaku sampai: ' + d.title, '', 'dokumen'));
+    const vaultOn = !!(store.rec.vault && !store.rec.vault._d);
+    L('doc').forEach((d) => push(d.expiry, 'doc', '📄', vaultOn ? 'Dokumen penting berlaku sampai' : 'Berlaku sampai: ' + d.title, '', 'dokumen'));
     L('inv').forEach((i) => push(i.expiry, 'inv', '📦', 'Kedaluwarsa: ' + i.name, '', 'stok'));
     return out.sort((a, b) => cmp(a.date, b.date) || cmp(a.time || '', b.time || '') || cmp(a.title, b.title));
   }

@@ -69,3 +69,8 @@ Tidak ada yang diketahui.
 - **Low** — Ekspor tidak memuat: nomor identitas, foto, rutinitas, kebiasaan, jurnal, acara/tugas. Disengaja untuk privasi/ruang lingkup; tambah bila diminta.
 - **Low** — `Bagikan` file memakai Web Share API (`navigator.canShare({files})`); tidak tersedia di semua peramban, fallback Unduh selalu ada.
 - Tes UI baru: `t12.mjs` (formulir dokumen dengan kamera), `t13.mjs` (ekspor + template AC). `smoke2`, `t9`, `t10` disesuaikan.
+
+## Kunci dokumen (v0.5.5)
+- Password + kode pemulihan hilang = data tak bisa dibuka. Belum ada tinjauan kripto independen.
+- Judul dokumen & tanggal berlaku tidak terenkripsi. Papan klip tidak dibersihkan otomatis.
+- Foto tidak ikut sinkron Drive/backup JSON. Belum diuji di HP nyata (WebCrypto PBKDF2 600k bisa ±1–3 dtk di HP lama).

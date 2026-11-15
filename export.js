@@ -62,7 +62,7 @@
       const inv = L('inv');
       if (inv.length) out.push({ name: 'Stok rumah', cols: [S('Barang'), N('Jumlah'), S('Satuan'), N('Batas minimum'), S('Kedaluwarsa'), S('Lokasi')], rows: inv.map((i) => [i.name, +i.qty || 0, i.unit || '', +i.min || 0, i.expiry || '', i.place || '']) });
       const docs = L('doc');
-      if (docs.length) out.push({ name: 'Dokumen penting', cols: [S('Dokumen'), S('Berlaku sampai'), S('Disimpan di')], rows: sortBy(docs, (d) => d.expiry || '9999').map((d) => [d.title, d.expiry || '', d.place || '']), note: 'Hanya daftar dokumen; nomor identitas dan foto tidak ikut diekspor.' });
+      if (docs.length) out.push({ name: 'Dokumen penting', cols: [S('Dokumen'), S('Kelompok'), S('Berlaku sampai')], rows: sortBy(docs, (d) => d.expiry || '9999').map((d) => [d.title, ({ personal: 'Personal', aset: 'Properti/Aset', karier: 'Pendidikan/Karier' })[d.cat] || 'Lainnya', d.expiry || '']), note: 'Hanya judul & tanggal berlaku; nomor, lokasi simpan, catatan, dan foto tidak diekspor.' });
       const cts = L('contact');
       if (cts.length) out.push({ name: 'Kontak penting', cols: [S('Nama'), S('Peran'), S('Telepon'), S('Darurat')], rows: sortBy(cts, (c) => c.name || '').map((c) => [c.name, c.role || '', c.phone || '', c.emergency ? 'Ya' : '']) });
       const wt = C.weightSeries(L('wt'));

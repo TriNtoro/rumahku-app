@@ -410,12 +410,16 @@
       commit(); toast(n + ' ditambahkan. Ketuk item untuk mengisi data aslinya.');
     }, null, note);
   }
+  const DOC_CATS = [['personal', '👤 Personal'], ['aset', '🏠 Properti, kendaraan & asuransi'], ['karier', '🎓 Pendidikan & karier'], ['lain', '📄 Lainnya']];
+  const DOC_CAT_NAME = { personal: 'Personal', aset: 'Properti/Aset', karier: 'Pendidikan/Karier', lain: 'Lainnya' };
   const TPL = {
     veh: [{ name: 'Motor', kind: 'motor' }, { name: 'Mobil', kind: 'mobil' }, { name: 'Motor listrik (EV)', kind: 'motor_ev' }, { name: 'Mobil listrik (EV)', kind: 'mobil_ev' }],
     asset: [['Kulkas', 'Elektronik'], ['Mesin cuci', 'Elektronik'], ['AC', 'Elektronik'], ['TV', 'Elektronik'], ['Laptop', 'Elektronik'], ['HP keluarga', 'Elektronik'], ['Rice cooker', 'Elektronik'], ['Dispenser air', 'Elektronik'], ['Water heater', 'Elektronik'], ['Kompor', 'Elektronik'], ['Sofa', 'Perabot'], ['Kasur', 'Perabot'], ['Lemari', 'Perabot'], ['Meja makan', 'Perabot'], ['Atap/genteng', 'Bangunan'], ['Pagar', 'Bangunan']],
     inv: [['Beras', 'kg', 2], ['Gas LPG 3 kg', 'tabung', 1], ['Galon air minum', 'galon', 1], ['Minyak goreng', 'liter', 1], ['Telur', 'kg', 1], ['Gula', 'kg', 1], ['Garam', 'bungkus', 1], ['Sabun mandi', 'pcs', 2], ['Sabun cuci piring', 'pcs', 1], ['Deterjen', 'pcs', 1], ['Tisu', 'pak', 2], ['Obat P3K (plester, antiseptik)', 'set', 1], ['Obat demam', 'strip', 1], ['Lampu cadangan', 'pcs', 1]],
     contact: [['Polisi', 'Darurat', '110', true], ['Ambulans', 'Darurat', '118', true], ['Pemadam kebakaran', 'Darurat', '113', true], ['SAR / Basarnas', 'Darurat', '115', true], ['Nomor darurat umum', 'Darurat', '112', true], ['PLN (gangguan listrik)', 'Layanan', '123', false], ['Ketua RT', 'Lingkungan', '', false], ['Satpam / keamanan', 'Lingkungan', '', false], ['Tukang listrik', 'Tukang', '', false], ['Tukang ledeng', 'Tukang', '', false], ['Tukang AC', 'Tukang', '', false], ['Dokter keluarga', 'Kesehatan', '', false], ['Bengkel langganan', 'Kendaraan', '', false], ['Sekolah anak', 'Keluarga', '', false]],
-    doc: ['KTP', 'NPWP', 'SIM', 'Kartu Keluarga', 'Sertifikat rumah (SHM/HGB)', 'PBB (bukti bayar tahunan)', 'Polis asuransi', 'BPKB kendaraan', 'Buku nikah', 'Akta kelahiran anak', 'Ijazah', 'Paspor', 'Surat wasiat / dokumen waris', 'Kartu BPJS', 'Kontrak kerja'],
+    doc: [['Kartu Keluarga (KK)', 'personal'], ['KTP', 'personal'], ['NPWP', 'personal'], ['Akta Kelahiran', 'personal'], ['Akta Nikah', 'personal'], ['Akta Cerai', 'personal'], ['SIM A', 'personal'], ['SIM C', 'personal'], ['BPJS Kesehatan', 'personal'], ['BPJS Ketenagakerjaan', 'personal'], ['Paspor', 'personal'],
+      ['Sertifikat tanah / rumah (SHM/HGB)', 'aset'], ['PBB (bukti bayar tahunan)', 'aset'], ['BPKB kendaraan', 'aset'], ['STNK kendaraan', 'aset'], ['Polis asuransi kesehatan', 'aset'], ['Polis asuransi jiwa', 'aset'], ['Polis asuransi properti', 'aset'], ['Polis asuransi kendaraan', 'aset'],
+      ['Ijazah', 'karier'], ['Transkrip nilai', 'karier'], ['Sertifikat keahlian / pelatihan', 'karier'], ['Kontrak kerja', 'karier'], ['Surat wasiat / dokumen waris', 'lain']],
     acc: [['Dompet tunai', 'kas'], ['BCA', 'bank'], ['Mandiri', 'bank'], ['BRI', 'bank'], ['BNI', 'bank'], ['SeaBank', 'bank'], ['Jago', 'bank'], ['Dana darurat (rekening terpisah)', 'bank', true], ['GoPay', 'ewallet'], ['OVO', 'ewallet'], ['DANA', 'ewallet'], ['ShopeePay', 'ewallet'], ['Kartu kredit', 'kartu'], ['Investasi (saham/reksa dana)', 'invest']],
     habit: ['Olahraga 30 menit', 'Baca buku', 'Tidur sebelum jam 10 malam', 'Jalan pagi', 'Tanpa gula/minuman manis', 'Tulis syukur hari ini', 'Waktu berkualitas dengan keluarga'],
     task: [['Belanja bulanan', 'monthly', 'Rumah'], ['Bersih-bersih rumah', 'weekly', 'Rumah'], ['Ganti sprei', 'weekly', 'Rumah'], ['Cek tabung gas & galon', 'monthly', 'Rumah'], ['Review keuangan bulanan', 'monthly', 'Pribadi'], ['Laporan kerja mingguan', 'weekly', 'Pekerjaan'], ['Backup data penting', 'monthly', 'Pribadi'], ['Telepon orang tua', 'weekly', 'Keluarga']],
@@ -430,7 +434,7 @@
     asset() { pickTemplates('Pilih aset', TPL.asset, (t) => t[0] + ' · ' + t[1], (t) => C.put(store, 'asset', { name: t[0], cat: t[1], price: 0 }), 'Isi tanggal beli, harga, dan garansi setelahnya.'); },
     inv() { pickTemplates('Pilih barang stok', TPL.inv, (t) => t[0] + ' (min ' + t[2] + ' ' + t[1] + ')', (t) => C.put(store, 'inv', { name: t[0], qty: 0, unit: t[1], min: t[2] }), 'Jumlah awal 0; atur stok sebenarnya dengan tombol + / −.'); },
     contact() { pickTemplates('Pilih kontak', TPL.contact, (t) => t[0] + (t[2] ? ' · ' + t[2] : ''), (t) => C.put(store, 'contact', { name: t[0], role: t[1], phone: t[2], emergency: t[3] }), 'Nomor darurat Indonesia sudah terisi. Kontak tanpa nomor: isi sendiri.'); },
-    doc() { pickTemplates('Pilih dokumen', TPL.doc, (t) => t, (t) => C.put(store, 'doc', { title: t, expiry: '', place: '' }), 'Isi lokasi simpan dan masa berlaku setelah ditambahkan.'); },
+    doc() { pickTemplates('Pilih dokumen', TPL.doc, (t) => '[' + DOC_CAT_NAME[t[1]] + '] ' + t[0], (t) => C.put(store, 'doc', { title: t[0], cat: t[1], expiry: '', place: '', notes: '', num: '' }), 'Isi nomor, lokasi simpan, dan masa berlaku setelah ditambahkan (ketuk dokumennya).'); },
     acc() { pickTemplates('Pilih akun', TPL.acc, (t) => t[0], (t) => C.put(store, 'acc', { name: t[0], type: t[1], opening: 0, emergency: !!t[2] }), 'Saldo awal 0. Ketuk akun untuk mengisi saldo sebenarnya.'); },
     habit() { pickTemplates('Pilih kebiasaan', TPL.habit, (t) => t, (t) => C.put(store, 'habit', { name: t, log: [] })); },
     task() { pickTemplates('Pilih tugas berulang', TPL.task, (t) => t[0] + ' · ' + (t[1] === 'weekly' ? 'tiap minggu' : 'tiap bulan'), (t, v) => { C.put(store, 'task', { title: t[0], due: C.today(), repeat: t[1], label: t[2], anchorDay: C.parseD(C.today()).getDate(), done: false, prio: '0' }); }, 'Tenggat pertama hari ini; ubah lewat ketuk tugas.'); },
@@ -470,13 +474,23 @@
   }
   function docForm(d) {
     d = d || {};
+    if (vOn() && !vOpen()) return vPrompt(() => docForm(d.id ? get('doc', d.id) : d));
+    const sec = docSecret(d.id ? d : null);
     openForm(d.id ? 'Ubah dokumen' : 'Dokumen penting', [
-      { k: 'title', label: 'Nama dokumen', req: true, list: ['Sertifikat rumah', 'Polis asuransi', 'Kartu keluarga', 'Paspor', 'SIM', 'Kontrak kerja', 'Perjanjian sewa'] },
+      { k: 'title', label: 'Nama dokumen', req: true, list: TPL.doc.map((t) => t[0]) },
+      { k: 'cat', label: 'Kelompok', type: 'select', opts: DOC_CATS.map((c) => [c[0], c[1]]) },
+      { k: 'num', label: 'Nomor dokumen (opsional)' },
       { k: 'photo', label: '📷 Foto / scan dokumen (opsional)', type: 'photo' },
       { k: 'expiry', label: 'Berlaku sampai / kedaluwarsa', type: 'date' }, { k: 'place', label: 'Disimpan di mana (laci, brankas, folder…)' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
-    ], d, (v) => { const rec = C.put(store, 'doc', { id: d.id, title: v.title, expiry: v.expiry, place: v.place, notes: v.notes }); commit(); if (v.photo) saveDocPhoto(rec, v.photo); },
+    ], { title: d.title, cat: d.cat || 'personal', num: sec.num, expiry: d.expiry, place: sec.place, notes: sec.notes }, (v) => {
+      const base = { id: d.id, title: v.title, cat: v.cat, expiry: v.expiry }, secret = { num: v.num, notes: v.notes, place: v.place };
+      if (!vOn()) { const rec = C.put(store, 'doc', Object.assign(base, secret)); commit(); if (v.photo) saveDocPhoto(rec, v.photo); return; }
+      if (!VAULT.key) return 'Dokumen terkunci lagi. Tutup, buka dengan password, lalu ulangi.';
+      const rec = C.put(store, 'doc', Object.assign(base, { num: '', notes: '', place: '' }));
+      Vault.seal(VAULT.key, secret).then((sc) => { C.put(store, 'doc', { id: rec.id, sec: sc }); VAULT.cache.docs[rec.id] = secret; commit(); if (v.photo) saveDocPhoto(rec, v.photo); });
+    },
     d.id ? [{ label: 'Hapus dokumen', fn: () => { list('pfile').filter((f) => f.docId === d.id).forEach((f) => { IDB.del(f.id); C.remove(store, f.id); }); C.remove(store, d.id); commit(); } }] : null,
-    'Ketuk 📷 Ambil foto untuk memotret dokumen langsung dengan kamera, atau 🖼️ Galeri untuk memilih foto yang sudah ada. Foto tersimpan hanya di HP ini. Bisa juga ditambah nanti lewat tombol 📷 di daftar dokumen.');
+    vOn() ? '🔐 Nomor, lokasi, catatan, dan foto dokumen ini disimpan terenkripsi.' : 'Ketuk 📷 Ambil foto untuk memotret dokumen, atau 🖼️ Galeri. Foto tersimpan hanya di HP ini. Disarankan atur password dulu di Lainnya → Kunci dokumen penting.');
   }
   function journalForm(j) {
     j = j || {};
@@ -681,6 +695,114 @@
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' })); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
+  // ---------- kunci dokumen penting: enkripsi nyata (vault.js = WebCrypto PBKDF2 + AES-GCM) ----------
+  // Yang dienkripsi: nomor/catatan/lokasi dokumen, nomor identitas anggota, foto scan dokumen & brankas.
+  // Judul dokumen & tanggal berlaku TIDAK dienkripsi agar pengingat tetap jalan (di Beranda/kalender judulnya disamarkan).
+  const VAULT = { key: null, cache: { docs: {}, ids: {} }, hiddenAt: 0, fails: 0, until: 0 };
+  const AUTOLOCK_MS = 120000;
+  const vMeta = () => { const m = store.rec.vault; return m && !m._d ? m : null; };
+  const vOn = () => !!vMeta(), vOpen = () => !!VAULT.key;
+  const docSecret = (d) => (!d ? {} : d.sec ? (VAULT.cache.docs[d.id] || {}) : { num: d.num || '', notes: d.notes || '', place: d.place || '' });
+  const idsOf = (p) => (p.idsSec ? (VAULT.cache.ids[p.id] || []) : (p.ids || []));
+  const lockCard = (what) => `<div class="card pad" style="text-align:center"><div style="font-size:2rem">🔒</div><div class="t">${esc(what)} terkunci</div><div class="s">Masukkan password untuk melihat atau menyalin.</div><button class="btn full" data-a="vUnlock" style="margin-top:10px">🔓 Buka dengan password</button></div>`;
+  async function vLoadCache() {
+    const c = { docs: {}, ids: {} };
+    for (const d of list('doc')) if (d.sec) { const o = await Vault.open(VAULT.key, d.sec); if (o) c.docs[d.id] = o; }
+    for (const p of list('person')) if (p.idsSec) { const o = await Vault.open(VAULT.key, p.idsSec); if (o) c.ids[p.id] = o; }
+    VAULT.cache = c;
+  }
+  function vLock(msg) { VAULT.key = null; VAULT.cache = { docs: {}, ids: {} }; ui.reveal = {}; closeDlg(); render(); if (msg !== false) toast(msg || '🔒 Dokumen terkunci'); }
+  // jalankan `then` setelah brankas terbuka (langsung bila kunci belum diaktifkan)
+  function vGate(then) { if (!vOn() || vOpen()) return then(); vPrompt(then); }
+  function vPrompt(then) {
+    const wait = VAULT.until - Date.now();
+    if (wait > 0) return toast('Terlalu banyak percobaan. Coba lagi ' + Math.ceil(wait / 1000) + ' detik.');
+    openForm('🔒 Buka dokumen penting', [{ k: 'pw', label: 'Password', req: true, type: 'password' }], {}, (v) => {
+      toast('Memeriksa password…');
+      Vault.unlock(vMeta(), v.pw).then(async (key) => {
+        if (!key) { VAULT.fails++; if (VAULT.fails >= 5) VAULT.until = Date.now() + Math.min(300, 15 * Math.pow(2, VAULT.fails - 5)) * 1000; toast('Password salah'); return vPrompt(then); }
+        VAULT.fails = 0; VAULT.key = key; await vLoadCache(); toast('🔓 Terbuka · terkunci lagi otomatis 2 menit setelah aplikasi ditinggalkan'); render(); if (then) then();
+      });
+    }, [{ label: 'Lupa password? Pakai kode pemulihan', fn: () => { closeDlg(); vRecoveryPrompt(then); return false; } }], 'Nomor, catatan, dan foto dokumen terkunci. Terkunci lagi otomatis 2 menit setelah aplikasi ditinggalkan.');
+  }
+  function vRecoveryPrompt(then) {
+    openForm('Pulihkan dengan kode', [{ k: 'code', label: 'Kode pemulihan (25 karakter)', req: true }, { k: 'pw', label: 'Password baru', type: 'password', req: true }, { k: 'pw2', label: 'Ulangi password baru', type: 'password', req: true }], {}, (v) => {
+      if (v.pw !== v.pw2) return 'Password baru tidak sama.';
+      const st = Vault.strength(v.pw); if (!st.ok) return st.msg;
+      toast('Memeriksa kode…');
+      Vault.setPassword(vMeta(), 'rec', v.code, v.pw).then(async (r) => {
+        if (!r) { toast('Kode pemulihan salah'); return vRecoveryPrompt(then); }
+        C.put(store, 'vault', Object.assign({ id: 'vault' }, r.meta)); VAULT.key = r.key; await vLoadCache(); commit(); toast('Password diganti & dokumen terbuka'); if (then) then();
+      });
+    }, null, 'Masukkan kode pemulihan yang Anda simpan saat mengatur kunci, lalu buat password baru.');
+  }
+  function vShowRecovery(code) {
+    dlg.innerHTML = `<div class="menu"><h3>🔑 Kode pemulihan Anda</h3><p class="note" style="margin:0">Ini <b>satu-satunya cara</b> membuka dokumen bila Anda lupa password. Tulis di kertas atau simpan di tempat aman <b>di luar HP ini</b>. Kode tidak akan ditampilkan lagi.</p><div class="card pad" style="text-align:center;font-family:monospace;font-size:1.1rem;letter-spacing:1px;user-select:all;word-break:break-all">${esc(code)}</div><button class="btn alt" data-i="c">Salin kode</button><label class="f c" style="margin:8px 0"><input type="checkbox" id="rcok"> Saya sudah menyimpannya di tempat aman</label><button class="btn" data-i="ok">Selesai</button></div>`;
+    dlg.oncancel = (e) => e.preventDefault();
+    dlg.querySelector('.menu').addEventListener('click', async (e) => {
+      const i = e.target.dataset && e.target.dataset.i; if (!i) return;
+      if (i === 'c') { try { await navigator.clipboard.writeText(code); toast('Kode disalin — tempel ke tempat aman lalu hapus dari papan klip'); } catch (x) { toast('Salin manual dari layar'); } return; }
+      if (!dlg.querySelector('#rcok').checked) return toast('Centang dulu bahwa kode sudah Anda simpan');
+      dlg.oncancel = null; closeDlg(); toast('🔐 Dokumen penting kini terenkripsi'); render();
+    });
+    dlg.showModal();
+  }
+  function vSetupForm() {
+    openForm('🔐 Atur password dokumen penting', [{ k: 'pw', label: 'Password', type: 'password', req: true }, { k: 'pw2', label: 'Ulangi password', type: 'password', req: true }], {}, (v) => {
+      if (v.pw !== v.pw2) return 'Password tidak sama.';
+      const st = Vault.strength(v.pw); if (!st.ok) return st.msg;
+      toast('Mengenkripsi… tunggu sebentar');
+      (async () => {
+        try {
+          const r = await Vault.setup(v.pw); C.put(store, 'vault', Object.assign({ id: 'vault' }, r.meta)); VAULT.key = r.key;
+          const n = await vMigrate(true); await vLoadCache(); commit(); vShowRecovery(r.recovery); if (n) toast(n + ' data dienkripsi');
+        } catch (e) { toast('Gagal mengatur kunci: ' + e.message); }
+      })();
+    }, null, 'Password ini diminta setiap membuka dokumen penting. Pakai kalimat panjang yang mudah diingat (mis. 4 kata acak). Password TIDAK bisa dilihat atau dipulihkan siapa pun; cadangannya hanya kode pemulihan yang ditampilkan setelah ini.');
+  }
+  // enkripsi (toEnc=true) atau buka kembali (false) semua data dokumen/identitas yang sudah ada
+  async function vMigrate(toEnc) {
+    const key = VAULT.key; let n = 0;
+    for (const d of list('doc')) {
+      if (toEnc && !d.sec) { const sec = await Vault.seal(key, { num: d.num || '', notes: d.notes || '', place: d.place || '' }); C.put(store, 'doc', { id: d.id, sec, num: '', notes: '', place: '' }); n++; }
+      else if (!toEnc && d.sec) { const o = await Vault.open(key, d.sec); if (o) { C.put(store, 'doc', { id: d.id, sec: '', num: o.num || '', notes: o.notes || '', place: o.place || '' }); n++; } }
+    }
+    for (const p of list('person')) {
+      if (toEnc && !p.idsSec && (p.ids || []).length) { const idsSec = await Vault.seal(key, p.ids); C.put(store, 'person', { id: p.id, idsSec, ids: [] }); n++; }
+      else if (!toEnc && p.idsSec) { const o = await Vault.open(key, p.idsSec); if (o) { C.put(store, 'person', { id: p.id, idsSec: '', ids: o }); n++; } }
+    }
+    for (const f of list('pfile').filter((x) => x.docId || x.personId)) {
+      let blob = null; try { blob = await IDB.get(f.id); } catch (e) { /* lewati */ }
+      if (!blob) continue;
+      if (toEnc && !f.enc) { const c = await Vault.sealBytes(key, new Uint8Array(await blob.arrayBuffer())); await IDB.put(f.id, new Blob([c], { type: 'application/octet-stream' })); C.put(store, 'pfile', { id: f.id, enc: 1, mime: blob.type || 'image/jpeg' }); n++; }
+      else if (!toEnc && f.enc) { const u = await Vault.openBytes(key, new Uint8Array(await blob.arrayBuffer())); if (u) { await IDB.put(f.id, new Blob([u], { type: f.mime || 'image/jpeg' })); C.put(store, 'pfile', { id: f.id, enc: 0 }); n++; } }
+    }
+    return n;
+  }
+  function vChangeForm() {
+    openForm('Ganti password', [{ k: 'old', label: 'Password sekarang', type: 'password', req: true }, { k: 'pw', label: 'Password baru', type: 'password', req: true }, { k: 'pw2', label: 'Ulangi password baru', type: 'password', req: true }], {}, (v) => {
+      if (v.pw !== v.pw2) return 'Password baru tidak sama.';
+      const st = Vault.strength(v.pw); if (!st.ok) return st.msg;
+      toast('Memeriksa…');
+      Vault.setPassword(vMeta(), 'pw', v.old, v.pw).then(async (r) => { if (!r) return toast('Password sekarang salah'); C.put(store, 'vault', Object.assign({ id: 'vault' }, r.meta)); VAULT.key = r.key; await vLoadCache(); commit(); toast('Password diganti'); });
+    }, null, 'Data tidak perlu dienkripsi ulang; kode pemulihan lama tetap berlaku.');
+  }
+  function vNewRecoveryForm() {
+    openForm('Buat kode pemulihan baru', [{ k: 'pw', label: 'Password sekarang', type: 'password', req: true }], {}, (v) => {
+      toast('Memeriksa…');
+      Vault.newRecovery(vMeta(), v.pw).then((r) => { if (!r) return toast('Password salah'); C.put(store, 'vault', Object.assign({ id: 'vault' }, r.meta)); commit(); vShowRecovery(r.recovery); });
+    }, null, 'Kode pemulihan LAMA tidak berlaku lagi setelah ini.');
+  }
+  function vOff() {
+    vGate(() => confirmBox('Matikan kunci? Semua nomor, catatan, dan foto dokumen akan disimpan POLOS lagi di HP ini.', async () => {
+      try { toast('Membuka enkripsi…'); await vMigrate(false); C.remove(store, 'vault'); VAULT.key = null; VAULT.cache = { docs: {}, ids: {} }; commit(); toast('Kunci dimatikan'); } catch (e) { toast('Gagal: ' + e.message); }
+    }));
+  }
+  // kunci otomatis 2 menit setelah aplikasi ditinggalkan (tab disembunyikan / pindah aplikasi)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') VAULT.hiddenAt = Date.now();
+    else { if (vOpen() && VAULT.hiddenAt && Date.now() - VAULT.hiddenAt > AUTOLOCK_MS) vLock(); VAULT.hiddenAt = 0; }
+  });
   // hasil ekspor: tawarkan Unduh atau Bagikan (menu = ketukan baru, jadi izin berbagi tetap sah)
   function deliverFile(name, bytes, mime) {
     const blob = new Blob([bytes], { type: mime }), file = new File([blob], name, { type: mime });
@@ -738,22 +860,27 @@
       { k: 'rel', label: 'Hubungan dengan Anda', type: 'select', opts: REL.map((x) => [x, x]) },
       { k: 'birth', label: 'Tanggal lahir', type: 'date' }, { k: 'phone', label: 'Nomor WhatsApp / telepon', type: 'tel' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
     ], { name: p.name, nick: p.nick, rel: p.rel || 'Istri', birth: p.birth, phone: p.phone, notes: p.notes }, (v) => {
-      C.put(store, 'person', { id: p.id, name: v.name, nick: v.nick, rel: v.rel, birth: v.birth, phone: v.phone, notes: v.notes, ids: p.ids || [], photo: p.photo || '' }); commit();
+      C.put(store, 'person', { id: p.id, name: v.name, nick: v.nick, rel: v.rel, birth: v.birth, phone: v.phone, notes: v.notes, ids: vOn() ? [] : (p.ids || []), photo: p.photo || '' }); commit();
     }, p.id ? [{ label: 'Hapus anggota & berkasnya', fn: () => {
       list('pfile').filter((f) => f.personId === p.id).forEach((f) => { IDB.del(f.id); C.remove(store, f.id); });
       C.remove(store, p.id); ui.stack = []; commit();
     } }] : null);
   }
   function idForm(p, i) {
-    const cur = i != null ? (p.ids || [])[i] : {};
+    const all = idsOf(p), cur = i != null ? (all[i] || {}) : {};
+    const save = (ids) => {
+      if (!vOn()) { C.put(store, 'person', { id: p.id, ids }); commit(); return; }
+      if (!VAULT.key) return toast('Dokumen terkunci lagi. Buka dengan password, lalu ulangi.');
+      Vault.seal(VAULT.key, ids).then((idsSec) => { C.put(store, 'person', { id: p.id, idsSec, ids: [] }); VAULT.cache.ids[p.id] = ids; commit(); });
+    };
     openForm(i != null ? 'Ubah data identitas' : 'Tambah data identitas', [
       { k: 'kind', label: 'Jenis', req: true, list: ID_KINDS }, { k: 'no', label: 'Nomor', req: true }, { k: 'exp', label: 'Berlaku sampai (bila ada)', type: 'date' }, { k: 'note', label: 'Catatan' },
     ], { kind: cur.kind, no: cur.no, exp: cur.exp, note: cur.note }, (v) => {
-      const ids = (p.ids || []).slice(); const e = { kind: v.kind, no: v.no, exp: v.exp, note: v.note };
+      const ids = all.slice(); const e = { kind: v.kind, no: v.no, exp: v.exp, note: v.note };
       if (i != null) ids[i] = e; else ids.push(e);
-      C.put(store, 'person', { id: p.id, ids }); commit();
-    }, i != null ? [{ label: 'Hapus data ini', fn: () => { const ids = (p.ids || []).slice(); ids.splice(i, 1); C.put(store, 'person', { id: p.id, ids }); commit(); } }] : null,
-    'Nomor disimpan polos (belum terenkripsi) dan tersembunyi di layar sampai Anda ketuk Tampilkan. Jangan simpan PIN atau kata sandi di sini.');
+      save(ids);
+    }, i != null ? [{ label: 'Hapus data ini', fn: () => { const ids = all.slice(); ids.splice(i, 1); save(ids); } }] : null,
+    vOn() ? '🔐 Disimpan terenkripsi dan hanya terlihat setelah password dimasukkan. Jangan simpan PIN atau kata sandi di sini.' : 'Nomor disimpan polos (belum terenkripsi) dan tersembunyi di layar sampai Anda ketuk Tampilkan. Atur password di Lainnya → Kunci dokumen penting agar terenkripsi.');
   }
   function draftForm(d) {
     d = d || {};
@@ -812,12 +939,23 @@
   // simpan foto sebagai lampiran dokumen (blob di IndexedDB, metadata di rekaman pfile)
   async function saveDocPhoto(doc, file) {
     let blob; try { blob = await resizeBlob(file, 1600, 0.78); } catch (e) { return toast(e.message); }
-    const rec = C.put(store, 'pfile', { personId: '', docId: doc.id, label: doc.title, size: blob.size });
-    IDB.put(rec.id, blob).then(() => { commit(); toast('Foto tersimpan di HP ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan foto (penyimpanan penuh/dibatasi)'); });
+    const enc = vOn(); let store1 = blob, meta = { personId: '', docId: doc.id, label: doc.title, size: blob.size };
+    if (enc) {
+      if (!VAULT.key) return toast('Dokumen terkunci. Buka dulu dengan password, lalu ulangi.');
+      store1 = new Blob([await Vault.sealBytes(VAULT.key, new Uint8Array(await blob.arrayBuffer()))], { type: 'application/octet-stream' }); meta = Object.assign(meta, { enc: 1, mime: blob.type || 'image/jpeg' });
+    }
+    const rec = C.put(store, 'pfile', meta);
+    IDB.put(rec.id, store1).then(() => { commit(); toast(enc ? 'Foto tersimpan (terenkripsi) di HP ini' : 'Foto tersimpan di HP ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan foto (penyimpanan penuh/dibatasi)'); });
   }
   async function viewFile(f) {
     let blob = null; try { blob = await IDB.get(f.id); } catch (e) { /* abaikan */ }
     if (!blob) return toast('Berkas ini tersimpan di perangkat lain / belum ada di sini');
+    if (f.enc) {
+      if (!VAULT.key) return vPrompt(() => viewFile(f));
+      const u = await Vault.openBytes(VAULT.key, new Uint8Array(await blob.arrayBuffer()));
+      if (!u) return toast('Foto tidak bisa dibuka (rusak atau kunci berbeda)');
+      blob = new Blob([u], { type: f.mime || 'image/jpeg' });
+    }
     const url = URL.createObjectURL(blob);
     dlg.innerHTML = `<div class="menu"><h3>${esc(f.label)}</h3><img src="${url}" alt="${esc(f.label)}" style="width:100%;border-radius:12px"><button class="btn" data-i="sh">Kirim / bagikan</button><button class="btn alt" data-i="s">Simpan ke galeri/unduhan</button><button class="btn bad sm" data-i="d">Hapus berkas</button><button class="btn alt sm" data-i="x">Tutup</button></div>`;
     dlg.querySelector('.menu').addEventListener('click', (e) => {
@@ -892,7 +1030,7 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${C.isBirthdayTitle(o.ev.title) ? '🎂 ' : ''}${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
+const APP_VERSION = '0.5.5', APP_DATE = '15 Nov 2026';
   const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
@@ -1206,10 +1344,10 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       mrow('c2', '🔧', 'Perawatan', 'Servis AC, kuras toren, dll.', 'perawatan'), mrow('c6', '🧾', 'Tagihan rutin', 'Listrik, internet, air, PBB', 'tagihan'),
       mrow('c4', '🚗', 'Kendaraan', 'Pajak, STNK, odometer, servis', 'kendaraan'), mrow('c1', '🛡️', 'Aset & garansi', 'Barang berharga dan masa garansi', 'aset'),
       mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
-      mrow('c4', '📄', 'Dokumen penting', 'Lokasi simpan & masa berlaku', 'dokumen')])
+      mrow('c4', '📄', 'Dokumen penting', 'KK, akta, SIM, BPJS, sertifikat, polis, ijazah', 'dokumen', vOn() ? '<span class="bd">🔒</span>' : '')])
       + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c4', '🗂️', 'Brankas identitas', 'Foto KTP, NPWP, KK siap dikirim', 'brankas'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
-      + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
-      + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c3', '📤', 'Ekspor data (Excel / PDF)', 'Laporan uang & rumah untuk dicetak atau diolah', 'ekspor'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
+      + g('Pribadi', [mrow('c4', '🗂️', 'Dokumen penting', 'KK, akta, SIM, BPJS, ijazah, sertifikat', 'dokumen', vOn() ? '<span class="bd">🔒</span>' : ''), mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
+      + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c3', '🔐', 'Kunci dokumen penting', vOn() ? (vOpen() ? 'Aktif · terbuka' : 'Aktif · terkunci') : 'Atur password agar dokumen terenkripsi', 'kunci'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c3', '📤', 'Ekspor data (Excel / PDF)', 'Laporan uang & rumah untuk dicetak atau diolah', 'ekspor'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
     return { title: 'Lainnya', sub: 'v' + APP_VERSION + ' · oleh Illusix', html: h + ABOUT_HTML };
   }
 
@@ -1286,8 +1424,25 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       return { title: 'Kontak penting', sub: '', add: () => contactForm(), html: `<div class="card">${cs.length ? cs.map((c) => `<div class="row">${ic(c.emergency ? 'c3' : 'c5', c.emergency ? '🚨' : '👤')}<div class="grow" data-a="contactEdit" data-id="${c.id}"><div class="t">${esc(c.name)}</div><div class="s">${esc(c.role || '')}</div></div>${c.phone ? `<a class="btn sm" href="tel:${esc(c.phone.replace(/[^\d+]/g, ''))}">📞 ${esc(c.phone)}</a>` : ''}</div>`).join('') : '<div class="empty">Belum ada kontak (tukang, dokter, RT, PLN…).</div>'}</div><button class="btn full" data-a="contactAdd">+ Kontak</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="contact">✨ Tambah dari template: nomor darurat, tukang, dll</button>` };
     },
     dokumen() {
+      const on = vOn(), open = vOpen();
+      if (on && !open) return { title: 'Dokumen penting', sub: 'terkunci', html: lockCard('Dokumen penting') + '<p class="note">Isi dokumen disembunyikan sampai password dimasukkan. Lupa password? Ketuk Buka lalu pilih kode pemulihan.</p>' };
       const ds = list('doc').sort((a, b) => C.cmp(a.expiry || '9999', b.expiry || '9999'));
-      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<button class="btn full" data-a="docQuick">📷 Foto cepat dengan kamera (KTP, NPWP, KK, SIM…)</button><div style="height:10px"></div><div class="card pad" data-a="nav" data-to="brankas" style="cursor:pointer"><div class="t">🪪 Brankas KTP, NPWP, KK, SIM</div><div class="s">Simpan foto scan identitas per orang, siap dikirim saat diminta. Ketuk di sini.</div></div><div class="card">${ds.length ? ds.map((d) => { const nf = list('pfile').filter((f) => f.docId === d.id).length; return `<div class="row"><div class="grow" data-a="docEdit" data-id="${d.id}" style="display:flex;gap:12px;align-items:center">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div><button class="btn alt sm" data-a="docFiles" data-id="${d.id}" aria-label="Foto scan ${esc(d.title)}">📷${nf ? ' ' + nf : ''}</button></div>`; }).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, sertifikat, polis, dll</button><p class="note">Ketuk 📷 di tiap dokumen untuk menyimpan foto/scan-nya (tersimpan hanya di HP ini). Jangan simpan nomor identitas sebagai teks di catatan (belum terenkripsi ujung-ke-ujung).</p>` };
+      const banner = on ? `<div class="card pad inl" style="justify-content:space-between;align-items:center"><span class="s">🔓 Terbuka · terkunci otomatis 2 menit setelah aplikasi ditinggalkan</span><button class="btn alt sm" data-a="vLockNow">Kunci</button></div>` : `<div class="card pad" data-a="nav" data-to="kunci" style="cursor:pointer"><div class="t">🔐 Beri password pada dokumen</div><div class="s">Nomor, catatan, dan foto scan bisa dikunci terenkripsi. Ketuk untuk mengatur.</div></div>`;
+      const row = (d) => {
+        const sec = docSecret(d), nf = list('pfile').filter((f) => f.docId === d.id).length, key = 'd' + d.id, shown = ui.reveal[key];
+        return `<div class="row" style="align-items:flex-start"><div class="grow"><div data-a="docEdit" data-id="${d.id}" style="display:flex;gap:12px;align-items:center">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${sec.place ? 'Disimpan: ' + esc(sec.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div>${sec.num ? `<div class="inl" style="gap:6px;margin:6px 0 0 4px"><span class="t idn">${shown ? esc(sec.num) : esc(C.maskId(sec.num))}</span><button class="btn alt sm" data-a="idShow" data-key="${key}">${shown ? 'Sembunyikan' : 'Tampilkan'}</button>${shown ? `<button class="btn alt sm" data-a="docCopy" data-id="${d.id}">Salin</button>` : ''}</div>` : ''}</div><button class="btn alt sm" data-a="docFiles" data-id="${d.id}" aria-label="Foto scan ${esc(d.title)}">📷${nf ? ' ' + nf : ''}</button></div>`;
+      };
+      const groups = DOC_CATS.map((c) => { const items = ds.filter((d) => (d.cat || 'lain') === c[0]); return items.length ? `<h2>${c[1]} · ${items.length}</h2><div class="card">${items.map(row).join('')}</div>` : ''; }).join('');
+      return { title: 'Dokumen penting', sub: ds.length + ' dokumen' + (on ? ' · 🔓 terbuka' : ''), add: () => docForm(), html: `<button class="btn full" data-a="docQuick">📷 Foto cepat dengan kamera (KTP, NPWP, KK, SIM…)</button><div style="height:10px"></div>${banner}<div class="card pad" data-a="nav" data-to="brankas" style="cursor:pointer"><div class="t">🪪 Brankas KTP, NPWP, KK, SIM</div><div class="s">Foto scan identitas per anggota keluarga, siap dikirim saat diminta. Ketuk di sini.</div></div>${groups || '<div class="card"><div class="empty">Belum ada dokumen.<br>Tambahkan dari template: KK, akta, SIM, BPJS, sertifikat, polis, ijazah.</div></div>'}<button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, akta, SIM, BPJS, sertifikat, polis, ijazah</button><p class="note">Ketuk 📷 di tiap dokumen untuk menyimpan foto/scan-nya (hanya di HP ini). ${on ? 'Nomor, lokasi, catatan, dan foto terenkripsi dengan password Anda.' : 'Belum ada password: isi dokumen tersimpan polos.'}</p>` };
+    },
+    kunci() {
+      const on = vOn(), open = vOpen();
+      const nDoc = list('doc').length, nId = list('person').filter((p) => p.idsSec || (p.ids || []).length).length, nFile = list('pfile').filter((f) => f.docId || f.personId).length;
+      let h = `<div class="card pad"><div class="t">${on ? (open ? '🔓 Terbuka' : '🔒 Terkunci') : '🔓 Belum diberi password'}</div><div class="s">${on ? 'Terkunci otomatis 2 menit setelah aplikasi ditinggalkan.' : 'Dokumen penting tersimpan polos di HP ini.'} · ${nDoc} dokumen · ${nId} anggota ber-identitas · ${nFile} foto berkas</div></div>`;
+      if (!on) h += '<button class="btn full" data-a="vSetup">🔐 Atur password</button>';
+      else h += `<div class="card pad"><button class="btn full" data-a="${open ? 'vLockNow' : 'vUnlock'}">${open ? '🔒 Kunci sekarang' : '🔓 Buka dengan password'}</button><div style="height:8px"></div><button class="btn alt full" data-a="vChange">Ganti password</button><div style="height:8px"></div><button class="btn alt full" data-a="vNewRec">Buat kode pemulihan baru</button><div style="height:8px"></div><button class="btn bad full" data-a="vOff">Matikan kunci…</button></div>`;
+      h += `<h2>Cara kerjanya</h2><div class="card pad"><p class="s" style="margin:0 0 8px"><b>Terenkripsi (AES-256 dengan kunci dari password Anda):</b> nomor dokumen, lokasi simpan, catatan, nomor identitas (KTP, NPWP, KK, SIM, BPJS), dan foto scan di Dokumen penting dan Brankas.</p><p class="s" style="margin:0 0 8px"><b>Tidak terenkripsi:</b> judul dokumen dan tanggal berlaku, supaya pengingat tetap berjalan. Di Beranda dan kalender judulnya disamarkan menjadi “Dokumen penting”.</p><p class="s" style="margin:0 0 8px"><b>Penting:</b> password dan kode pemulihan tidak bisa dilihat atau dipulihkan oleh siapa pun, termasuk pembuat aplikasi. Jika keduanya hilang, isi dokumen tidak dapat dibuka lagi. Simpan kode pemulihan di tempat aman di luar HP.</p><p class="s" style="margin:0"><b>Batas perlindungan:</b> selama terbuka (maks. 2 menit setelah Anda meninggalkan aplikasi), isi dokumen terlihat oleh siapa pun yang memegang HP. Backup JSON dan Drive hanya berisi data terenkripsi. Pakai juga kunci layar HP.</p></div>`;
+      return { title: 'Kunci dokumen penting', sub: on ? (open ? 'terbuka' : 'terkunci') : 'belum aktif', html: h };
     },
     tugas() {
       const t = C.today(), all = list('task'), f = ui.taskFilter;
@@ -1323,6 +1478,7 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Tanggal lahir</span><b>${p.birth ? fmtDate(p.birth) : '—'}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div class="kv"><span>Mode</span><b>${p.mode ? esc((MODES.find((m) => m[0] === p.mode) || [0, '—'])[1]) : '—'}</b></div><div class="kv"><span>Jenis kelamin · tinggi</span><b>${p.sex ? (p.sex === 'L' ? 'Laki-laki' : 'Perempuan') : '—'} · ${p.height ? esc(p.height) + ' cm' : '—'}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
     },
     brankas() {
+      if (vOn() && !vOpen()) return { title: 'Brankas identitas', sub: 'terkunci', html: lockCard('Brankas identitas') };
       const fs = list('pfile').filter((f) => f.personId && get('person', f.personId)), f0 = ui.vaultF || 'Semua';
       const labels = ['Semua'].concat(FILE_LABELS.filter((l) => fs.some((f) => f.label === l)));
       const shown = fs.filter((f) => f0 === 'Semua' || f.label === f0).sort((a, b) => C.cmp(a.label, b.label) || C.cmp(a._u, b._u));
@@ -1346,12 +1502,14 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       let h = `<div class="card pad"><div style="display:flex;gap:14px;align-items:center">${avHTML(p, 'lg')}<div class="grow"><div class="t" style="font-size:1.15rem">${esc(p.name)}</div><div class="s">${esc(p.rel || '')}${p.nick ? ' · "' + esc(p.nick) + '"' : ''}${age != null ? ' · ' + age + ' tahun' : ''}</div></div></div>
         ${p.birth ? `<div class="kv"><span>Lahir</span><b>${fmtDate(p.birth)}</b></div>` : ''}${p.phone ? `<div class="kv"><span>Telepon</span><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}"><b>${esc(p.phone)}</b></a></div>` : ''}${p.notes ? `<div class="kv"><span>Catatan</span><span>${esc(p.notes)}</span></div>` : ''}
         <div class="btns" style="margin-top:12px"><button class="btn" data-a="personKabar" data-id="${p.id}">💌 Kabari</button><button class="btn alt" data-a="personEdit" data-id="${p.id}">Ubah</button><button class="btn alt" data-a="personPhoto" data-id="${p.id}">📷 Foto profil</button></div></div>`;
-      h += `<h2>Data identitas</h2><div class="card">${(p.ids || []).length ? p.ids.map((e, i) => {
+      const locked = vOn() && !vOpen(), ids = idsOf(p);
+      if (locked) h += '<h2>Data identitas &amp; berkas</h2>' + lockCard('Data identitas dan foto berkas');
+      else h += `<h2>Data identitas</h2><div class="card">${ids.length ? ids.map((e, i) => {
         const key = p.id + ':' + i, shown = ui.reveal[key];
         return `<div class="row"><div class="grow"><div class="s">${esc(e.kind)}${e.exp ? ' · berlaku s.d. ' + fmtDate(e.exp) : ''}</div><div class="t idn">${shown ? esc(e.no) : esc(C.maskId(e.no))}</div>${e.note ? `<div class="s">${esc(e.note)}</div>` : ''}</div><div class="inl" style="gap:6px"><button class="btn alt sm" data-a="idShow" data-key="${key}">${shown ? 'Sembunyikan' : 'Tampilkan'}</button>${shown ? `<button class="btn alt sm" data-a="idCopy" data-id="${p.id}" data-i="${i}">Salin</button>` : ''}<button class="link" data-a="idEdit" data-id="${p.id}" data-i="${i}" aria-label="Ubah">✎</button></div></div>`;
       }).join('') : '<div class="empty">Belum ada data. Tambahkan KTP, NPWP, KK, SIM, BPJS, dll.</div>'}</div><button class="btn full" data-a="idAdd" data-id="${p.id}">+ Data identitas</button>`;
-      h += `<h2>Foto &amp; berkas</h2><div class="card">${files.length ? files.map((f) => `<div class="row" data-a="fileOpen" data-id="${f.id}">${ic('c4', '🖼️')}<div class="grow"><div class="t">${esc(f.label)}</div><div class="s">${fmtDate((f._u || '').slice(0, 10))}${f.size ? ' · ' + Math.round(f.size / 1024) + ' KB' : ''}</div></div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada foto KTP/NPWP/dokumen.</div>'}</div><button class="btn full" data-a="fileAdd" data-id="${p.id}">+ Foto / berkas</button>`;
-      h += '<p class="note">⚠️ Nomor identitas disimpan polos dan hanya disembunyikan di layar. Foto berkas disimpan hanya di perangkat ini (tidak ikut ekspor/sinkron Drive); ganti HP = unggah ulang. Enkripsi dengan kata sandi belum ada — gunakan kunci layar HP yang kuat.</p>';
+      if (!locked) h += `<h2>Foto &amp; berkas</h2><div class="card">${files.length ? files.map((f) => `<div class="row" data-a="fileOpen" data-id="${f.id}">${ic('c4', '🖼️')}<div class="grow"><div class="t">${esc(f.label)}</div><div class="s">${fmtDate((f._u || '').slice(0, 10))}${f.size ? ' · ' + Math.round(f.size / 1024) + ' KB' : ''}</div></div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada foto KTP/NPWP/dokumen.</div>'}</div><button class="btn full" data-a="fileAdd" data-id="${p.id}">+ Foto / berkas</button>`;
+      h += vOn() ? '<p class="note">🔐 Nomor identitas dan foto berkas terenkripsi dengan password Anda. Foto hanya ada di perangkat ini (tidak ikut sinkron Drive).</p>' : '<p class="note">⚠️ Nomor identitas disimpan polos dan hanya disembunyikan di layar. Atur password di <b>Lainnya → Kunci dokumen penting</b> agar terenkripsi. Foto berkas hanya di perangkat ini (tidak ikut sinkron Drive); ganti HP = unggah ulang.</p>';
       return { title: p.nick || p.name, sub: p.rel || '', html: h, add: () => personForm(p) };
     },
     afeksi() {
@@ -1388,6 +1546,7 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
         + D('📱 Pasang di layar utama HP', '<p><b>Android (Chrome):</b> buka alamat aplikasi, menu ⋮ → <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>. Ikon RUMAHKU muncul seperti aplikasi biasa dan bisa dibuka tanpa bilah alamat.</p><p><b>iPhone (Safari):</b> tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p><p class="s">Setelah dibuka sekali dengan internet, aplikasi tetap terbuka saat offline.</p>')
         + D('☁️ Hubungkan Google Drive (sekali saja)', `<p><b>Tidak wajib.</b> Tanpa Drive, data tetap tersimpan di HP Anda. Cukup rutin ketuk <b>Lainnya → Sinkron &amp; backup → Bagikan backup</b> dan simpan ke Files/Drive/WhatsApp. Langkah di bawah hanya bila ingin data otomatis sama di beberapa perangkat.</p><ol><li>Buka <b>console.cloud.google.com</b> dan masuk dengan akun Google Anda.</li><li>Buat <b>Project baru</b> (nama bebas, mis. "rumahku").</li><li><b>APIs &amp; Services → Library</b>, cari <b>Google Drive API</b>, klik <b>Enable</b>.</li><li><b>OAuth consent screen</b> (atau "Google Auth Platform"): pilih <b>External</b>, isi nama aplikasi dan email Anda. Di <b>Audience / Test users</b>, tambahkan email Google Anda sendiri.</li><li><b>Credentials → Create credentials → OAuth client ID</b>, jenis <b>Web application</b>.</li><li>Pada <b>Authorized JavaScript origins</b> isi persis: <code>${esc(origin)}</code> (tanpa garis miring di akhir dan tanpa nama folder).</li><li>Salin <b>Client ID</b> (berakhiran .apps.googleusercontent.com).</li><li>Di aplikasi: <b>Lainnya → Sinkron &amp; backup</b>, tempel Client ID, ketuk <b>Simpan ID</b>, lalu <b>Hubungkan &amp; sinkron</b>.</li></ol><p class="s">Layar "Google belum memverifikasi aplikasi ini" muncul untuk aplikasi pribadi: pilih <b>Lanjutan → Lanjutkan</b>. Aplikasi hanya meminta akses ke folder tersembunyi miliknya sendiri di Drive, bukan seluruh file Anda. Tampilan menu Google Cloud kadang berubah nama; ikuti padanan terdekat.</p>`)
         + D('📅 Kalender & pengingat acara', '<p>Di bawah kalender ada <b>Agenda bulan ini</b>: semua acara, ulang tahun 🎂, tagihan, STNK/pajak, dst. urut tanggal. Yang <b>sudah lewat dicoret</b>.</p><p>Saat membuat acara, pilih <b>Pengingat</b> (tepat waktu, 10 menit, 30 menit, 1 jam, <b>3 jam</b>, <b>1 hari</b>, <b>3 hari</b>, 1 minggu sebelumnya) dan boleh menambah <b>pengingat kedua</b>. Acara tanpa jam dihitung dari pukul 08.00 hari H. Judul yang memuat "ulang tahun/ultah" otomatis diberi 🎂. Ulang tahun anggota keluarga diingatkan otomatis H-1 dan hari H pukul 08.00.</p><p class="note">Pengingat berbunyi selama aplikasi terbuka/berjalan di latar. Agar berbunyi saat HP terkunci, ekspor .ics di Lainnya → Notifikasi.</p>')
+        + D('🔐 Kunci dokumen penting (password)', '<p><b>Lainnya → Kunci dokumen penting → Atur password.</b> Nomor dokumen, lokasi, catatan, nomor KTP/NPWP/KK/SIM/BPJS, dan foto scan dienkripsi (AES-256) dengan kunci dari password Anda. Tanpa password tidak bisa dilihat atau disalin. Terkunci lagi otomatis 2 menit setelah aplikasi ditinggalkan.</p><p><b>Simpan kode pemulihan</b> (25 karakter) di luar HP. Lupa password <i>dan</i> kode = dokumen tidak bisa dibuka lagi oleh siapa pun.</p><p class="note">Judul dokumen dan tanggal berlaku tidak dienkripsi supaya pengingat jalan.</p>')
         + D('📤 Ekspor ke Excel / PDF', '<p><b>Lainnya → Ekspor data</b> (atau tombol 📤 di tab Uang → Transaksi/Statistik). Pilih Excel (.xlsx) untuk diolah di Excel/Google Sheets, atau PDF untuk dicetak/dikirim. Pilih transaksi bulan ini atau semua periode.</p><p class="note">Nomor identitas dan foto tidak pernah ikut diekspor.</p>')
         + D('🔔 Pengingat & notifikasi', '<p>Ketuk <b>Lainnya → Notifikasi → Izinkan notifikasi</b>. Pengingat berbunyi selama aplikasi terbuka atau berjalan di latar.</p><p>Agar <b>pasti berbunyi saat HP terkunci</b>, ekspor ke Kalender HP (.ics) dari halaman Notifikasi, lalu buka berkasnya dan pilih Google Calendar.</p>')
         + D('👪 Dipakai bersama / dites orang lain', '<p>Bagikan alamat aplikasi. <b>Setiap orang mendapat aplikasi kosong dan datanya terpisah di HP masing-masing</b>; tidak ada data yang bercampur dan tidak ada server pusat.</p><p>Untuk sinkron Drive, orang lain memakai Client ID mereka sendiri (langkah di atas), atau Anda menambahkan email mereka sebagai <b>Test users</b> di project Anda. Untuk berbagi data keluarga yang sama antar HP, pakai satu akun Google yang sama atau ekspor/impor JSON.</p><button class="btn alt" data-a="shareApp">Bagikan alamat aplikasi</button><p class="s">' + esc(url) + '</p>')
@@ -1485,21 +1644,28 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       openMenu('Berkas milik siapa?', items);
     },
     docFiles(d) {
-      const doc = get('doc', d.id); if (!doc) return; const fs = list('pfile').filter((f) => f.docId === doc.id);
-      const items = fs.map((f, i) => ({ label: '🖼️ Lihat / kirim foto ' + (i + 1) + (f.size ? ' (' + Math.round(f.size / 1024) + ' KB)' : ''), fn: () => viewFile(f) }));
-      items.push({ label: '📷 Ambil foto (kamera)', fn: () => pickImage((file) => saveDocPhoto(doc, file), true) });
-      items.push({ label: '🖼️ Tambah dari galeri / berkas', fn: () => pickImage((file) => saveDocPhoto(doc, file), false) });
-      openMenu(doc.title, items);
+      vGate(() => {
+        const doc = get('doc', d.id); if (!doc) return; const fs = list('pfile').filter((f) => f.docId === doc.id);
+        const items = fs.map((f, i) => ({ label: '🖼️ Lihat / kirim foto ' + (i + 1) + (f.size ? ' (' + Math.round(f.size / 1024) + ' KB)' : '') + (f.enc ? ' 🔐' : ''), fn: () => viewFile(f) }));
+        items.push({ label: '📷 Ambil foto (kamera)', fn: () => pickImage((file) => saveDocPhoto(doc, file), true) });
+        items.push({ label: '🖼️ Tambah dari galeri / berkas', fn: () => pickImage((file) => saveDocPhoto(doc, file), false) });
+        openMenu(doc.title, items);
+      });
     },
     // jalan pintas: foto dulu, lalu beri nama; dokumen dibuat otomatis bila belum ada
     docQuick() {
       pickImage((file) => {
-        openForm('Simpan foto sebagai…', [{ k: 'title', label: 'Nama dokumen', req: true, list: ['KTP', 'NPWP', 'Kartu keluarga', 'SIM', 'Paspor', 'BPJS', 'STNK', 'Ijazah'] }], { title: 'KTP' }, (v) => {
-          const doc = list('doc').find((x) => (x.title || '').toLowerCase() === v.title.trim().toLowerCase()) || C.put(store, 'doc', { title: v.title.trim(), expiry: '', place: '', notes: '' });
-          saveDocPhoto(doc, file);
-        }, null, 'Foto sudah diambil. Beri nama; jika dokumen dengan nama itu sudah ada, foto ditambahkan ke sana.');
+        openForm('Simpan foto sebagai…', [{ k: 'title', label: 'Nama dokumen', req: true, list: ['KTP', 'NPWP', 'Kartu Keluarga (KK)', 'SIM A', 'SIM C', 'Paspor', 'BPJS Kesehatan', 'STNK kendaraan', 'Ijazah'] }], { title: 'KTP' }, (v) => {
+          vGate(() => {
+            const nm = v.title.trim().toLowerCase(), tp = TPL.doc.find((t) => t[0].toLowerCase() === nm);
+            const doc = list('doc').find((x) => (x.title || '').toLowerCase() === nm) || C.put(store, 'doc', { title: v.title.trim(), cat: tp ? tp[1] : 'personal', expiry: '', place: '', notes: '', num: '' });
+            saveDocPhoto(doc, file);
+          });
+        }, null, 'Foto sudah diambil. Beri nama; jika dokumen dengan nama itu sudah ada, foto ditambahkan ke sana.' + (vOn() ? ' Foto akan dienkripsi.' : ''));
       }, true);
     },
+    docCopy(d) { const doc = get('doc', d.id), n = docSecret(doc).num; if (!n) return; navigator.clipboard.writeText(n).then(() => toast('Nomor disalin — tempel lalu hapus dari papan klip'), () => toast('Salin manual dari layar')); },
+    vSetup() { vSetupForm(); }, vUnlock() { vPrompt(() => render()); }, vLockNow() { vLock(); }, vChange() { vChangeForm(); }, vNewRec() { vNewRecoveryForm(); }, vOff() { vOff(); },
     goalAdd() { goalForm(); }, goalTpl() { goalTplMenu(); }, goalEdit(d) { const g = get('goal', d.id); if (g) goalForm(g); }, goalDep(d) { const g = get('goal', d.id); if (g) goalDepForm(g); },
     recapWa() { window.open('https://wa.me/?text=' + encodeURIComponent(recapText(ui.moneyMonth || nowYM())), '_blank', 'noopener'); },
     async recapCopy() { try { await navigator.clipboard.writeText(recapText(ui.moneyMonth || nowYM())); toast('Rekap disalin'); } catch (e) { toast('Gagal menyalin'); } },
@@ -1520,7 +1686,7 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
     },
     shopTog(d) { const x = get('shop', d.id); if (x) { C.put(store, 'shop', { id: x.id, done: !x.done }); commit(); } },
     shopClear() { list('shop').filter((x) => x.done).forEach((x) => C.remove(store, x.id)); commit(); },
-    contactAdd() { contactForm(); }, contactEdit(d) { contactForm(get('contact', d.id)); }, docAdd() { docForm(); }, docEdit(d) { docForm(get('doc', d.id)); },
+    contactAdd() { contactForm(); }, contactEdit(d) { contactForm(get('contact', d.id)); }, docAdd() { vGate(() => docForm()); }, docEdit(d) { vGate(() => docForm(get('doc', d.id))); },
     journalAdd() { journalForm(); }, journalEdit(d) { journalForm(get('journal', d.id)); }, habitAdd() { habitForm(); }, habitEdit(d) { habitForm(get('habit', d.id)); },
     habitTog(d) { const h = get('habit', d.id); if (!h) return; const t = C.today(), log = h.log || []; C.put(store, 'habit', { id: h.id, log: log.includes(t) ? log.filter((x) => x !== t) : log.concat([t]).slice(-400) }); commit(); },
     saveCid() { cfg.clientId = (document.getElementById('cid').value || '').trim(); cfg.connected = false; saveCfg(); syncMsg = ''; toast('Client ID disimpan'); render(); },
@@ -1553,16 +1719,22 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       const p = get('person', d.id); if (!p) return;
       photoSource('Foto profil', async (f) => { try { const url = await avatarFrom(f); C.put(store, 'person', { id: p.id, photo: url }); commit(); toast('Foto profil diperbarui'); } catch (e) { toast(e.message); } });
     },
-    idAdd(d) { const p = get('person', d.id); if (p) idForm(p); }, idEdit(d) { const p = get('person', d.id); if (p) idForm(p, +d.i); },
+    idAdd(d) { vGate(() => { const p = get('person', d.id); if (p) idForm(p); }); }, idEdit(d) { vGate(() => { const p = get('person', d.id); if (p) idForm(p, +d.i); }); },
     idShow(d) { ui.reveal[d.key] = !ui.reveal[d.key]; render(); },
-    async idCopy(d) { const p = get('person', d.id), e = p && (p.ids || [])[+d.i]; if (!e) return; try { await navigator.clipboard.writeText(e.no); toast('Nomor disalin'); } catch (x) { toast('Salin manual dari layar'); } },
+    async idCopy(d) { const p = get('person', d.id), e = p && idsOf(p)[+d.i]; if (!e) return; try { await navigator.clipboard.writeText(e.no); toast('Nomor disalin'); } catch (x) { toast('Salin manual dari layar'); } },
     fileAdd(d) {
-      const p = get('person', d.id); if (!p) return;
-      photoSource('Foto berkas ' + (p.nick || p.name), async (f) => {
-        let blob; try { blob = await resizeBlob(f, 1400, 0.75); } catch (e) { return toast(e.message); }
-        openForm('Label berkas', [{ k: 'label', label: 'Jenis berkas', req: true, list: FILE_LABELS }], { label: 'KTP' }, (v) => {
-          const rec = C.put(store, 'pfile', { personId: p.id, label: v.label, size: blob.size });
-          IDB.put(rec.id, blob).then(() => { commit(); toast('Berkas tersimpan di perangkat ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan berkas (penyimpanan penuh/dibatasi)'); });
+      vGate(() => {
+        const p = get('person', d.id); if (!p) return;
+        photoSource('Foto berkas ' + (p.nick || p.name), async (f) => {
+          let blob; try { blob = await resizeBlob(f, 1400, 0.75); } catch (e) { return toast(e.message); }
+          openForm('Label berkas', [{ k: 'label', label: 'Jenis berkas', req: true, list: FILE_LABELS }], { label: 'KTP' }, (v) => {
+            (async () => {
+              const enc = vOn(); let data = blob, meta = { personId: p.id, label: v.label, size: blob.size };
+              if (enc) { if (!VAULT.key) return toast('Dokumen terkunci lagi. Buka dulu dengan password, lalu ulangi.'); data = new Blob([await Vault.sealBytes(VAULT.key, new Uint8Array(await blob.arrayBuffer()))], { type: 'application/octet-stream' }); meta = Object.assign(meta, { enc: 1, mime: blob.type || 'image/jpeg' }); }
+              const rec = C.put(store, 'pfile', meta);
+              IDB.put(rec.id, data).then(() => { commit(); toast(enc ? 'Berkas tersimpan (terenkripsi) di perangkat ini' : 'Berkas tersimpan di perangkat ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan berkas (penyimpanan penuh/dibatasi)'); });
+            })();
+          });
         });
       });
     },
@@ -1634,7 +1806,7 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       try {
         const data = JSON.parse(String(rd.result));
         if (!C.validStore(data)) return toast('Berkas bukan backup RUMAHKU yang valid');
-        store = C.mergeStores(store, data); commit(); toast('Backup digabung');
+        store = C.mergeStores(store, data); commit(); toast('Backup digabung'); if (vOpen()) vLoadCache().then(render);
       } catch (err) { toast('Berkas tidak bisa dibaca'); }
     };
     rd.readAsText(e.target.files[0]); e.target.value = '';
@@ -1681,7 +1853,7 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
       const id = found.files && found.files[0] && found.files[0].id;
       if (id) {
         const remote = await (await dfetch('https://www.googleapis.com/drive/v3/files/' + id + '?alt=media')).json();
-        if (C.validStore(remote)) { store = C.mergeStores(store, remote); persist(); }
+        if (C.validStore(remote)) { store = C.mergeStores(store, remote); persist(); if (vOpen()) vLoadCache().then(render); }
       }
       const body = JSON.stringify(store);
       if (id) await dfetch('https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
@@ -1743,6 +1915,6 @@ const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('sw.js').catch(() => { /* PWA opsional */ });
   }
-  window.__rk = { store: () => store, C, tick };
+  window.__rk = { store: () => store, C, tick, vault: { on: vOn, open: vOpen, hide: (ms) => { VAULT.hiddenAt = Date.now() - ms; } } };
   render(); tick();
 })();
