@@ -1,4 +1,4 @@
-/* RUMAHKU-ONE Lite — ekspor Excel (.xlsx) dan PDF tanpa pustaka luar.
+/* Rumahku — ekspor Excel (.xlsx) dan PDF tanpa pustaka luar.
    UMD: window.Exp di browser, module.exports di Node (untuk tes).
    Aturan: nomor identitas (KTP/NPWP/KK/SIM) TIDAK pernah diekspor; foto tidak diekspor. */
 (function (root, factory) {
@@ -16,8 +16,6 @@
   const GROUP = { rumah: 'Rumah', kendaraan: 'Kendaraan', elektronik: 'Elektronik' };
 
   const S = (h) => ({ h, t: 's' }), M = (h) => ({ h, t: 'm' }), N = (h) => ({ h, t: 'n' });
-  const BILL_CAT = { kpr: 'KPR Rumah', angsuran_rumah: 'Angsuran Rumah / KPR', kendaraan: 'Cicilan Kendaraan', haji: 'Angsuran Haji', umrah: 'Angsuran Umrah', arisan: 'Arisan', elektronik: 'Cicilan Elektronik', pinjaman: 'Cicilan Pinjaman', asuransi: 'Asuransi', pendidikan: 'Biaya Pendidikan', internet: 'Internet & Telepon', utilitas: 'Listrik & Air', lingkungan: 'Iuran Lingkungan', langganan: 'Langganan Bulanan', lainnya: 'Tagihan Lainnya' };
-  const billCat = (b) => BILL_CAT[b.cat] || (b.kind === 'cicilan' ? 'Cicilan' : b.kind === 'wajib' ? 'Kewajiban tetap' : 'Tagihan');
   const sortBy = (arr, f) => arr.slice().sort((a, b) => (f(a) < f(b) ? -1 : f(a) > f(b) ? 1 : 0));
 
   // opts: { ym:'2026-11', allTx:bool, scope:'all'|'uang'|'rumah', today:'YYYY-MM-DD' }
@@ -44,8 +42,9 @@
       out.push({ name: 'Akun', cols: [S('Nama'), S('Tipe'), M('Saldo awal'), M('Saldo sekarang'), S('Dana darurat')], rows: sortBy(accs, (a) => a.name || '').map((a) => [a.name, ACC_TYPE[a.type] || a.type || '', a.opening || 0, bal[a.id] || 0, a.emergency ? 'Ya' : '']) });
       const bs = C.budgetStatus(L('budget'), C.monthReport(txs, ym));
       if (bs.length) out.push({ name: 'Anggaran', cols: [S('Kategori'), M('Batas'), M('Terpakai'), N('% terpakai')], rows: bs.map((b) => [b.cat, b.limit, b.spent, b.pct]), note: 'Periode ' + ym });
-      const bills = L('bill');
-      if (bills.length) out.push({ name: 'Tagihan & kewajiban', cols: [S('Nama'), S('Kategori'), S('Jenis'), M('Nominal'), M('Nominal angsuran'), N('Angsuran ke'), N('Tenor'), N('Sisa angsuran'), N('Tgl jatuh tempo'), S('Sudah dibayar bulan ' + ym)], rows: sortBy(bills, (b) => +b.dueDay || 0).map((b) => { const st = C.installmentInfo ? C.installmentInfo(b) : { active: false }; return [b.name, billCat(b), b.kind || 'tagihan', b.amountEst || 0, b.installmentAmount || b.amountEst || 0, st.active && st.no != null ? st.no : '', st.active && st.count != null ? st.count : '', st.active && st.remaining != null ? st.remaining : '', +b.dueDay || 0, b.paidYM === ym ? 'Ya' : 'Belum']; }), note: 'Progres angsuran dihitung dari nomor angsuran dan tenor pada template.' });
+      const bills = L('bill'), bpays = L('bpay');
+      if (bills.length) out.push({ name: 'Tagihan & kewajiban', cols: [S('Nama'), S('Jenis'), M('Nominal'), S('Jadwal'), N('Angsuran dibayar'), N('Tenor'), M('Sisa kewajiban'), S('Status')], rows: sortBy(bills, (b) => +b.dueDay || 0).map((b) => { const st = C.billState(b, bpays, today); return [b.name, b.kind || 'tagihan', b.amountEst || 0, b.freq === 'weekly' ? 'Mingguan, hari ke-' + (+b.dueWeekday || 0) : 'Tgl ' + (+b.dueDay || 0), st.instDone, +b.tenor || 0, st.remaining == null ? '' : st.remaining, st.status]; }), note: 'Nomor kontrak tidak diekspor.' });
+      if (bpays.length) out.push({ name: 'Riwayat bayar tagihan', cols: [S('Tanggal bayar'), S('Tagihan'), M('Jumlah'), N('Angsuran ke'), S('Untuk jatuh tempo'), S('Keterangan')], rows: sortBy(bpays, (x) => x.date || '').map((x) => [x.date || '', x.name || '', x.amount || 0, x.instNo || '', x.occ || '', [x.part ? 'sebagian' : '', x.payoff ? 'pelunasan' : '', x.late ? 'terlambat' : '', x.void ? 'dibatalkan' : ''].filter(Boolean).join(', ')]) });
       const gc = L('gc');
       const goals = L('goal');
       if (goals.length) out.push({ name: 'Tujuan keuangan', cols: [S('Tujuan'), M('Target'), M('Terkumpul'), N('% tercapai'), S('Tenggat'), S('Status')], rows: goals.map((g) => {
@@ -165,7 +164,7 @@
     if (cur || !lines.length) push();
     return lines;
   }
-  const rp = (n) => (n < 0 ? '-Rp ' : 'Rp ') + String(Math.abs(Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const rp = (n) => 'Rp' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.').replace(/^-/, '-');
   const cellText = (c, v) => (v === '' || v == null) ? '' : (c.t === 'm' && typeof v === 'number' ? rp(v) : c.t === 'n' && typeof v === 'number' ? String(v).replace('.', ',') : String(v));
 
   function pdf(title, subtitle, shs) {
@@ -175,7 +174,7 @@
     const text = (x, yy, s, size, bold, right, w) => { s = clean(s); if (!s) return; const xx = right ? x + w - tw(s, size, bold) : x; cur.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + xx.toFixed(2) + ' ' + yy.toFixed(2) + ' Td (' + pe(s) + ') Tj ET'); };
     np();
     text(MX, y, title, 16, true); y -= 18; text(MX, y, subtitle, 9, false); y -= 12;
-    text(MX, y, 'RUMAHKU-ONE Lite oleh Illusix — dibuat dari data di perangkat Anda. Nomor identitas dan foto tidak disertakan.', 7.5, false); y -= 16;
+    text(MX, y, 'Rumahku oleh Illusix — dibuat dari data di perangkat Anda. Nomor identitas dan foto tidak disertakan.', 7.5, false); y -= 16;
     shs.forEach((sh) => {
       const cols = sh.cols, n = cols.length;
       const nat = cols.map((c, i) => { let m = tw(clean(c.h), FS, true); sh.rows.forEach((r) => { const w = tw(clean(cellText(c, r[i])), FS, false); if (w > m) m = w; }); return m + 2 * PAD + 1; });

@@ -28,3 +28,6 @@ Tag baru (Ayah, Ibu, Suami, Istri, Anak, Saudara, Kakek, Nenek, Kerabat, Lainnya
 - Penomoran versi: setiap perbaikan menaikkan 1 angka (0.5.7 → 0.5.8 ...). Ubah APP_VERSION, VER di sw.js, judul README.
 - Kolom "sudah bayar berapa kali / angsuran ke-berapa" dipindah tepat di bawah Tenor (Haji, KPR, kendaraan, dll.).
 - Detail tagihan: tombol "Geser +1 / −1 angsuran" (dengan konfirmasi; tidak mencatat pembayaran/transaksi). Tes: ui-tests/t19.
+
+## v0.5.8
+- Nama aplikasi diubah menjadi "Rumahku" (tanpa "-ONE"): judul, manifest, tentang, ekspor, PDF, ICS, README, lisensi. Nama repo dan kunci penyimpanan (rk1.*) tidak berubah agar data lama tetap terbaca.

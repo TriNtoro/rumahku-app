@@ -1,6 +1,6 @@
 {
-  "name": "RUMAHKU-ONE",
-  "short_name": "RUMAHKU",
+  "name": "Rumahku",
+  "short_name": "Rumahku",
   "description": "Rumah, uang, tugas, dan kalender pribadi",
   "start_url": "./",
   "scope": "./",

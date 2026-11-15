@@ -1,4 +1,4 @@
-/* RUMAHKU-ONE Lite — Brankas terenkripsi untuk dokumen penting.
+/* Rumahku — Brankas terenkripsi untuk dokumen penting.
    Hanya memakai WebCrypto bawaan peramban (PBKDF2-SHA256 + AES-256-GCM). TIDAK ada primitif kripto buatan sendiri.
    Desain & ancaman: docs/security/crypto-design.md. UMD: window.Vault / module.exports (untuk tes Node >= 19). */
 (function (root, factory) {

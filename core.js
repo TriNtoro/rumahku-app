@@ -1,4 +1,4 @@
-/* RUMAHKU-ONE Lite — logika murni (tanpa DOM) agar bisa diuji di Node. */
+/* Rumahku — logika murni (tanpa DOM) agar bisa diuji di Node. */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.Core = factory();
@@ -86,14 +86,11 @@
 
   // ---------- uang ----------
   // Tampilan rupiah ditulis manual, TIDAK memakai Intl (data ICU berbeda antar versi Node/browser).
-  function fmtNum(n) {
-    if (!Number.isSafeInteger(n)) throw new Error('number must be a safe integer');
-    const neg = n < 0;
-    return (neg ? '-' : '') + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  }
   function fmtIDR(n) {
     if (!Number.isSafeInteger(n)) throw new Error('amount must be a safe integer');
-    return (n < 0 ? '-Rp ' : 'Rp ') + fmtNum(Math.abs(n));
+    const neg = n < 0;
+    const s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return (neg ? '-' : '') + 'Rp ' + s;
   }
   // Menerima "1.500.000", "1500000", "Rp 25.000". Menolak desimal & non-angka -> null.
   function parseAmount(str) {
@@ -273,46 +270,157 @@
     const y = +ym.slice(0, 4), m = +ym.slice(5, 7);
     return ym + '-' + pad(Math.min(Math.max(1, +day || 1), daysInMonth(y, m - 1)));
   }
-  // Tanggal tagihan berikutnya yang BELUM dibayar. paidYM = periode bulan terakhir yang sudah dibayar.
-  function billNext(b, todayS) {
-    let ym = todayS.slice(0, 7), due = dueInMonth(ym, b.dueDay), g = 0;
-    while (b.paidYM && due.slice(0, 7) <= b.paidYM && g++ < 36) {
-      ym = addMonths(ym + '-01', 1, 1).slice(0, 7);
-      due = dueInMonth(ym, b.dueDay);
+  // ---------- Tagihan & angsuran rutin ----------
+  // Model: `bill` = TEMPLATE (jadwal, boleh diubah). `bpay` = RIWAYAT pembayaran (snapshot, tidak ikut berubah saat template diedit).
+  // Kejadian (occurrence) diidentifikasi tanggal jatuh temponya (YYYY-MM-DD). Bulanan: tanggal dueDay (dipotong ke akhir bulan);
+  // mingguan: hari dueWeekday (0=Min..6=Sab). paidYM/paidThru = penunjuk "lunas sampai" yang dipertahankan agar data lama tetap terbaca.
+  const bFreq = (b) => (b && b.freq === 'weekly' ? 'weekly' : 'monthly');
+  const billLive = (b) => !!b && !b._d && b.active !== false && !b.closed;
+  function fnv(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); }
+  // id deterministik: dua perangkat yang membayar kejadian yang sama menghasilkan SATU catatan (tidak ganda setelah sinkron)
+  const payKey = (billId, occ, tag) => fnv(billId + '|' + occ + '|' + tag);
+  // kejadian pertama SETELAH afterS (tanggal, eksklusif); tidak memeriksa tanggal akhir/tenor
+  function billOccAfter(b, afterS) {
+    let from = addDays(afterS, 1);
+    if (b.startDate && b.startDate > from) from = b.startDate;
+    if (bFreq(b) === 'weekly') {
+      const wd = Math.min(6, Math.max(0, +b.dueWeekday || 0));
+      let d = from, g = 0; while (parseD(d).getDay() !== wd && g++ < 8) d = addDays(d, 1);
+      return d;
     }
-    return due;
+    let ym = from.slice(0, 7), d = dueInMonth(ym, b.dueDay), g = 0;
+    while (d < from && g++ < 600) { ym = addMonths(ym + '-01', 1, 1).slice(0, 7); d = dueInMonth(ym, b.dueDay); }
+    return d;
   }
-  // ---------- angsuran (v0.5.6) ----------
-  // Progres angsuran: ringkas "12/48", detail "Angsuran ke-12 dari 48".
-  // Nomor kosong -> "-"; tanpa tenor -> "Angsuran ke-3"; tenor tidak konsisten -> "Periksa data tenor".
-  function installmentInfo(b) {
-    b = b || {};
-    const hasNo = b.installmentNo !== '' && b.installmentNo != null;
-    const hasCount = b.installmentCount !== '' && b.installmentCount != null;
-    const active = b.hasInstallment === true || hasNo || hasCount;
-    if (!active) return { active: false, no: null, count: null, short: '', detail: '', remaining: null, state: 'none' };
-    const no = hasNo ? Number(b.installmentNo) : null;
-    const count = hasCount ? Number(b.installmentCount) : null;
-    const okNo = Number.isSafeInteger(no) && no >= 1;
-    const okCount = Number.isSafeInteger(count) && count >= 1;
-    if (!okNo && !okCount) return { active: true, no: null, count: null, short: '-', detail: '-', remaining: null, state: 'empty' };
-    if (!okNo) return { active: true, no: null, count: okCount ? count : null, short: '-', detail: '-', remaining: null, state: 'no-number' };
-    if (!okCount) return { active: true, no, count: null, short: 'Angsuran ke-' + no, detail: 'Angsuran ke-' + no, remaining: null, state: 'no-tenor' };
-    if (no > count) return { active: true, no, count, short: 'Periksa data tenor', detail: 'Periksa data tenor', remaining: 0, state: 'invalid' };
-    return { active: true, no, count, short: no + '/' + count, detail: 'Angsuran ke-' + no + ' dari ' + count, remaining: count - no, state: 'ok' };
+  // tanggal jatuh tempo terakhir (dari tanggal selesai, atau tanggal mulai + tenor); null bila terbuka
+  function billEndDate(b) {
+    if (b.endDate) return b.endDate;
+    const t = +b.tenor || 0;
+    if (!(t > 0) || !b.startDate) return null;
+    let d = billOccAfter(b, addDays(b.startDate, -1));
+    for (let i = 1; i < t; i++) d = billOccAfter(b, d);
+    return d;
   }
-  // Hasil pembayaran: hanya pembayaran penuh yang menaikkan nomor angsuran.
-  function applyBillPayment(b, amount) {
-    b = b || {};
-    const st = installmentInfo(b), amt = Number(amount) || 0;
-    const target = +b.installmentAmount > 0 ? +b.installmentAmount : +b.amountEst;
-    const paidInFull = target > 0 ? amt >= target : amt > 0;
-    if (!st.active || !paidInFull || st.state === 'invalid' || st.state === 'empty' || st.state === 'no-number') {
-      return { installmentNo: b.installmentNo == null ? '' : b.installmentNo, paidInFull, done: false, progress: st };
+  // buku besar pembayaran satu template: per kejadian {paid, due, full}, jumlah angsuran lunas, total dibayar
+  function billLedger(b, pays) {
+    const byOcc = {}; let paidTotal = 0;
+    (pays || []).forEach((p) => {
+      if (p.void || p.billId !== b.id) return;
+      const o = byOcc[p.occ] || (byOcc[p.occ] = { paid: 0, due: +p.due || 0, full: false });
+      o.paid += +p.amount || 0; paidTotal += +p.amount || 0;
+      if (!p.part) o.full = true;
+    });
+    let fullCount = 0;
+    Object.keys(byOcc).forEach((k) => { const o = byOcc[k]; if (!o.full && o.due > 0 && o.paid >= o.due) o.full = true; if (o.full) fullCount++; });
+    return { byOcc, fullCount, paidTotal };
+  }
+  // Kejadian berikutnya yang BELUM lunas (boleh sudah lewat = terlambat). null = tidak ada lagi (nonaktif, lunas, selesai).
+  // Tanpa `pays` perilaku sama seperti versi lama (hanya paidYM/paidThru).
+  function billNext(b, todayS, pays) {
+    if (!b || !billLive(b)) return null;
+    let n;
+    if (bFreq(b) === 'weekly') {
+      n = b.paidThru ? billOccAfter(b, b.paidThru) : billOccAfter(b, addDays(todayS, -1));
+    } else {
+      let ym = todayS.slice(0, 7), due = dueInMonth(ym, b.dueDay), g = 0;
+      while (b.paidYM && due.slice(0, 7) <= b.paidYM && g++ < 36) { ym = addMonths(ym + '-01', 1, 1).slice(0, 7); due = dueInMonth(ym, b.dueDay); }
+      n = due;
+      if (b.paidYM && b.paidYM < todayS.slice(0, 7)) { // ada bulan terlewat: tampilkan yang paling lama belum dibayar
+        const first = billOccAfter(b, dueInMonth(b.paidYM, 31)); if (first < n) n = first;
+      }
+      if (b.startDate && n < b.startDate) n = billOccAfter(b, addDays(b.startDate, -1));
     }
-    const nextNo = st.count ? Math.min(st.count, st.no + 1) : st.no + 1;
-    const progress = installmentInfo(Object.assign({}, b, { installmentNo: nextNo, installmentCount: st.count || b.installmentCount }));
-    return { installmentNo: nextNo, paidInFull, done: !!(st.count && st.no >= st.count), progress };
+    if (pays) {
+      const led = billLedger(b, pays); let g = 0;
+      while (led.byOcc[n] && led.byOcc[n].full && g++ < 600) n = billOccAfter(b, n);
+      const t = +b.tenor || 0;
+      if (t > 0 && (+b.instBefore || 0) + led.fullCount >= t) return null;
+    }
+    const end = billEndDate(b); if (end && n > end) return null;
+    return n;
+  }
+  // Ringkasan satu template: angsuran ke-n, sisa tenor, sisa kewajiban, status.
+  // Sisa kewajiban: bila ada tenor & nominal = sisa angsuran × nominal; bila tidak = total − uang muka − dibayar sebelumnya − riwayat; selain itu null.
+  function billState(b, pays, todayS) {
+    const led = billLedger(b, pays), instDone = (+b.instBefore || 0) + led.fullCount, tenor = +b.tenor || 0, nominal = +b.amountEst || 0;
+    const next = billNext(b, todayS, pays), open = next && led.byOcc[next] ? led.byOcc[next] : null, partial = open && !open.full ? open.paid : 0;
+    let remaining = null, remInst = tenor > 0 ? Math.max(0, tenor - instDone) : null;
+    if (b.closed) { remaining = 0; remInst = 0; }
+    else if (tenor > 0 && nominal > 0) remaining = Math.max(0, remInst * nominal - partial);
+    else if (+b.total > 0) remaining = Math.max(0, (+b.total || 0) - (+b.dp || 0) - (+b.paidBefore || 0) - led.paidTotal);
+    let status;
+    if (b.closed) status = 'lunas';
+    else if (b.active === false) status = 'nonaktif';
+    else if (!next) status = 'lunas';
+    else if (next < todayS) status = 'terlambat';
+    else if (partial > 0) status = 'sebagian';
+    else if (bFreq(b) === 'weekly' ? daysBetween(todayS, next) <= 7 : next.slice(0, 7) === todayS.slice(0, 7)) status = 'belum';
+    else status = b.paidYM === todayS.slice(0, 7) || (b.paidThru && daysBetween(b.paidThru, todayS) <= 7) || led.byOcc[dueInMonth(todayS.slice(0, 7), b.dueDay)] ? 'sudah' : 'upcoming';
+    return { next, instDone, instNext: tenor > 0 && instDone >= tenor ? null : instDone + 1, remainingInst: remInst, remaining, status, partial, paidTotal: led.paidTotal, end: billEndDate(b), ledger: led };
+  }
+  // Rencana pembayaran (murni): menentukan kejadian yang dibayar, id deterministik, dan menolak pembayaran ganda.
+  // o = {date, amount, part, payoff, today}. Hasil: {error} atau {occ, due, late, full, instNo, payId, txId, payoff}.
+  function billPayPlan(b, pays, o) {
+    if (!billLive(b)) return { error: 'Tagihan ini tidak aktif atau sudah lunas.' };
+    const amount = Math.round(+o.amount || 0); if (!(amount >= 0) || !Number.isFinite(amount)) return { error: 'Nominal tidak valid.' };
+    const st = billState(b, pays, o.today); const occ = st.next;
+    if (!occ) return { error: 'Tidak ada tagihan yang perlu dibayar.' };
+    const full = !o.part || !!o.payoff;
+    const led = st.ledger.byOcc[occ]; if (led && led.full) return { error: 'Periode ini sudah lunas.' };
+    const tag = full ? (o.payoff ? 'PAYOFF' : 'FULL') : 'P|' + o.date + '|' + amount;
+    const payId = 'bp' + payKey(b.id, occ, tag);
+    if ((pays || []).some((p) => p.id === payId && !p.void)) return { error: 'Pembayaran ini sudah tercatat.' };
+    const tenor = +b.tenor || 0;
+    return { occ, due: +b.amountEst || 0, late: o.date > occ, full, part: !full, payoff: !!o.payoff, instNo: o.payoff && tenor > 0 ? tenor : st.instDone + 1, payId, txId: 'tx' + payKey(b.id, occ, tag), amount };
+  }
+  // Terapkan rencana pembayaran ke store: riwayat (bpay) + pengeluaran (tx, bila akun dipilih) + penunjuk lunas. Idempoten (id deterministik).
+  function applyBillPay(store, b, plan, o) {
+    const now = o.nowISO;
+    put(store, 'bpay', { id: plan.payId, billId: b.id, name: b.name, cat: b.cat || '', occ: plan.occ, date: o.date, amount: plan.amount, due: plan.due, part: plan.part, payoff: plan.payoff, late: plan.late, instNo: plan.instNo, txId: o.accId && plan.amount > 0 ? plan.txId : '', void: false }, now);
+    if (o.accId && plan.amount > 0) {
+      put(store, 'tx', { id: plan.txId, kind: 'expense', amount: plan.amount, acc: o.accId, to: '', cat: o.cat || 'Tagihan', date: o.date, note: b.name + (+b.tenor > 0 || +b.instBefore > 0 ? ' · angsuran ke-' + plan.instNo : '') + (plan.part ? ' (sebagian)' : ''), cid: plan.txId, void: false }, now);
+    }
+    if (plan.full) {
+      const patch = { id: b.id, lastPaid: o.date, lastAmount: plan.amount, paidThru: b.paidThru && b.paidThru > plan.occ ? b.paidThru : plan.occ };
+      const ym = plan.occ.slice(0, 7); if (bFreq(b) === 'monthly') patch.paidYM = b.paidYM && b.paidYM > ym ? b.paidYM : ym;
+      if (plan.payoff) { patch.closed = true; patch.closedAt = o.date; }
+      put(store, 'bill', patch, now);
+    }
+  }
+  // Batalkan satu pembayaran: riwayat & transaksi di-void (tidak dihapus), penunjuk lunas mundur.
+  function voidBillPay(store, payId, todayS, nowISO) {
+    const p = store.rec[payId]; if (!p || p._t !== 'bpay' || p.void) return false;
+    put(store, 'bpay', { id: payId, void: true, voidAt: todayS }, nowISO);
+    if (p.txId && store.rec[p.txId] && !store.rec[p.txId].void) put(store, 'tx', { id: p.txId, void: true, voidAt: todayS }, nowISO);
+    const b = store.rec[p.billId];
+    if (b && !b._d && !p.part) {
+      const patch = { id: b.id };
+      if (bFreq(b) === 'monthly') { const prev = addMonths(p.occ.slice(0, 7) + '-01', -1, 1).slice(0, 7); if (b.paidYM && b.paidYM >= p.occ.slice(0, 7)) patch.paidYM = prev; }
+      if (b.paidThru && b.paidThru >= p.occ) patch.paidThru = bFreq(b) === 'weekly' ? addDays(p.occ, -7) : addMonths(p.occ, -1, +b.dueDay || undefined);
+      if (p.payoff) { patch.closed = false; patch.closedAt = ''; }
+      put(store, 'bill', patch, nowISO);
+    }
+    return true;
+  }
+  // Ringkasan dashboard untuk satu bulan (YYYY-MM): total, sudah, belum, terlambat, daftar kejadian
+  function billMonthSummary(bills, pays, ym, todayS) {
+    const rows = []; let total = 0, paid = 0, late = 0;
+    bills.filter((b) => !b._d && b.active !== false).forEach((b) => {
+      const led = billLedger(b, pays), first = ym + '-01', end = billEndDate(b), stop = !!b.closed;
+      const to = addMonths(first, 1, 1); const occs = [];
+      let d = billOccAfter(b, addDays(first, -1)), g = 0;
+      while (d < to && g++ < 10) { occs.push(d); d = billOccAfter(b, d); }
+      occs.forEach((occ) => {
+        const l = led.byOcc[occ]; if (!l && (stop || (end && occ > end))) return;
+        if (!l && (+b.tenor > 0) && (+b.instBefore || 0) + led.fullCount >= +b.tenor) return;
+        const legacy = !l && bFreq(b) === 'monthly' && b.paidYM && occ.slice(0, 7) <= b.paidYM;
+        const due = l && l.due ? l.due : (+b.amountEst || 0), got = l ? Math.min(l.paid, Math.max(due, l.paid)) : legacy ? due : 0, full = !!(l && l.full) || legacy;
+        const left = full ? 0 : Math.max(0, due - got);
+        total += Math.max(due, got); paid += got; if (!full && occ < todayS) late += left;
+        rows.push({ bill: b, occ, due, paid: got, full, late: !full && occ < todayS });
+      });
+    });
+    return { total, paid, unpaid: Math.max(0, total - paid), late, rows };
   }
   // Sisa km sampai perawatan berikut (null bila rencana tidak berbasis km atau odometer belum diisi).
   function kmLeft(p, odo) { return p.nextKm && odo != null && odo !== '' ? p.nextKm - Number(odo) : null; }
@@ -337,7 +445,8 @@
       if (v.pajakDue) push('pajak', '🚗', 'Pajak ' + v.name, v.pajakDue, 'kendaraan', 30);
       if (v.stnkDue) push('stnk', '🪪', 'STNK ' + v.name, v.stnkDue, 'kendaraan', 30);
     });
-    L('bill').forEach((b) => { const st = installmentInfo(b); push('bill', '🧾', 'Tagihan ' + b.name + (st.active && st.short ? ' · ' + st.short : ''), billNext(b, todayS), 'tagihan', 7); });
+    const bpays = L('bpay');
+    L('bill').forEach((b) => { const nx = billNext(b, todayS, bpays); if (nx) push('bill', '🧾', 'Tagihan ' + b.name, nx, 'tagihan', 7); });
     L('asset').forEach((a) => {
       if (a.warrantyUntil && a.warrantyUntil >= todayS) push('warranty', '🛡️', 'Garansi ' + a.name + ' berakhir', a.warrantyUntil, 'aset', 30);
     });
@@ -514,17 +623,20 @@
     L('task').filter((t) => !t.done && t.due).forEach((t) => push(t.due, 'task', '✅', t.title, t.time || '', 'tugas', { id: t.id, time: t.time }));
     const pr = store.rec.profile && !store.rec.profile._d ? store.rec.profile : null;
     const people = L('person').map((p) => ({ name: p.nick || p.name, birth: p.birth })).concat(pr && pr.birth ? [{ name: pr.nick || pr.name || 'Saya', birth: pr.birth }] : []).filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.birth || ''));
-    const bills = L('bill').filter((b) => +b.dueDay >= 1);
+    const bpays = L('bpay'), bills = L('bill').filter((b) => billLive(b) && (bFreq(b) === 'weekly' || +b.dueDay >= 1)).map((b) => ({ b, end: billEndDate(b), led: billLedger(b, bpays) }));
     for (let d = from; d < to; d = addDays(d, 1)) {
       const dt = parseD(d), md = d.slice(5), dim = daysInMonth(dt.getFullYear(), dt.getMonth());
       people.forEach((p) => {
         let bmd = p.birth.slice(5); if (bmd === '02-29' && dim === 28) bmd = '02-28';
         if (bmd === md) { const age = dt.getFullYear() - +p.birth.slice(0, 4); push(d, 'birthday', '🎂', 'Ulang tahun ' + p.name, age > 0 ? 'ke-' + age : '', 'keluarga'); }
       });
-      bills.forEach((b) => {
-        if (Math.min(+b.dueDay, dim) !== dt.getDate()) return;
-        const st = installmentInfo(b);
-        push(d, 'bill', '🧾', b.name + (st.active && st.short && st.short !== '-' ? ' · ' + st.short : ''), (b.paidYM === d.slice(0, 7) ? 'sudah dibayar' : b.amountEst ? '±' + fmtIDR(b.amountEst) : 'tagihan'), 'tagihan', { paid: b.paidYM === d.slice(0, 7) });
+      bills.forEach(({ b, end, led }) => {
+        if (b.startDate && d < b.startDate) return; if (end && d > end) return;
+        const hit = bFreq(b) === 'weekly' ? dt.getDay() === (+b.dueWeekday || 0) : Math.min(+b.dueDay, dim) === dt.getDate();
+        if (!hit) return;
+        const l = led.byOcc[d], paid = !!(l && l.full) || (bFreq(b) === 'monthly' && !!b.paidYM && d.slice(0, 7) <= b.paidYM);
+        if (!paid && (+b.tenor > 0) && (+b.instBefore || 0) + led.fullCount >= +b.tenor) return;
+        push(d, 'bill', '🧾', b.name, paid ? 'sudah dibayar' : l && l.paid > 0 ? 'dibayar sebagian' : b.amountEst ? '±' + fmtIDR(b.amountEst) : 'tagihan', 'tagihan', { paid });
       });
     }
     L('plan').forEach((p) => push(p.nextDue, 'plan', '🔧', p.name, 'perawatan', p.vehicleId ? 'kendaraan' : 'perawatan'));
@@ -586,6 +698,57 @@
     return d.length >= 8 && d.length <= 15 ? d : '';
   }
 
+  // ---------- Minum air ----------
+  // Catatan = `wlog` {date, time, ml, gml, goalMl, void}; pengaturan = satu record `wcfg`. Perubahan target/ukuran gelas tidak mengubah riwayat (ml per catatan + snapshot target).
+  const WATER_DEFAULT = { on: true, goal: 8, glassMl: 250, from: '08:00', to: '20:00', every: 60, quietFrom: '', quietTo: '' };
+  function waterCfg(store) {
+    const r = store.rec.wcfg && !store.rec.wcfg._d ? store.rec.wcfg : {}, o = Object.assign({}, WATER_DEFAULT);
+    for (const k of Object.keys(WATER_DEFAULT)) if (r[k] !== undefined && r[k] !== null && r[k] !== '') o[k] = r[k];
+    if (r.quietFrom === '' || r.quietTo === '') { o.quietFrom = ''; o.quietTo = ''; }
+    o.goal = Math.min(40, Math.max(1, Math.round(+o.goal) || 8)); o.glassMl = Math.min(2000, Math.max(50, Math.round(+o.glassMl) || 250)); o.every = Math.max(15, Math.round(+o.every) || 60);
+    o.goalMl = o.goal * o.glassMl; return o;
+  }
+  const waterLogs = (store, dateS) => list(store, 'wlog').filter((l) => !l.void && l.date === dateS).sort((a, b) => cmp((a.time || '') + a._u, (b.time || '') + b._u));
+  function waterDay(store, dateS) {
+    const cfg = waterCfg(store), ls = waterLogs(store, dateS), ml = ls.reduce((s, l) => s + (+l.ml || 0), 0);
+    const goalMl = ls.length && ls[ls.length - 1].goalMl ? +ls[ls.length - 1].goalMl : cfg.goalMl; // riwayat memakai target saat dicatat
+    return { ml, goalMl, glasses: Math.round((ml / cfg.glassMl) * 10) / 10, pct: goalMl > 0 ? Math.min(999, Math.round((ml / goalMl) * 100)) : 0, count: ls.length, logs: ls, reached: ml >= goalMl };
+  }
+  // tambah air: ml bulat 1..5000; hindari catatan ganda (id deterministik per tanggal+menit+ml+urutan) lewat batas waktu di UI dan pengecekan ini
+  function waterAdd(store, ml, dateS, hm, nowISO) {
+    const v = Math.round(+ml); if (!(v >= 1 && v <= 5000)) return null;
+    const cfg = waterCfg(store); return put(store, 'wlog', { date: dateS, time: hm, ml: v, gml: cfg.glassMl, goalMl: cfg.goalMl, void: false }, nowISO);
+  }
+  function waterUndoLast(store, dateS, nowISO) { const ls = waterLogs(store, dateS); if (!ls.length) return null; const l = ls[ls.length - 1]; put(store, 'wlog', { id: l.id, void: true }, nowISO); return l; }
+  function inQuiet(min, qf, qt) { const a = toMin(qf), b = toMin(qt); if (a == null || b == null || a === b) return false; return a < b ? min >= a && min < b : min >= a || min < b; }
+  function waterTimes(cfg) {
+    const a = toMin(cfg.from), b = toMin(cfg.to); if (a == null || b == null || b < a) return [];
+    const out = []; for (let m = a; m <= b && out.length < 48; m += cfg.every) if (!inQuiet(m, cfg.quietFrom, cfg.quietTo)) out.push(fmtHM(m)); return out;
+  }
+  // pengingat yang jatuh tempo sekarang (null bila mati, target tercapai, di luar rentang, jam tenang, atau sudah dikirim)
+  function waterDue(store, dateS, nowMin, fired, graceMin) {
+    const cfg = waterCfg(store); if (!cfg.on || inQuiet(nowMin, cfg.quietFrom, cfg.quietTo)) return null;
+    const day = waterDay(store, dateS); if (day.reached) return null;
+    const grace = graceMin || 20; let hit = null;
+    waterTimes(cfg).forEach((hm) => { const m = toMin(hm); if (m <= nowMin && nowMin - m <= grace) hit = hm; });
+    if (!hit) return null; const key = 'wt|' + dateS + '|' + hit; if (fired && fired.has(key)) return null;
+    return { key, ml: day.ml, goalMl: day.goalMl, glasses: day.glasses, goal: cfg.goal };
+  }
+  function waterHistory(store, endS, days) {
+    const out = []; for (let i = 0; i < days; i++) { const d = addDays(endS, -i), x = waterDay(store, d); out.push({ date: d, ml: x.ml, goalMl: x.goalMl, pct: x.pct, count: x.count }); } return out;
+  }
+
+  // Sabtu/Minggu (untuk pewarnaan kalender); tanggal lokal YYYY-MM-DD
+  function isWeekend(dateS) { const d = parseD(dateS).getDay(); return d === 0 || d === 6; }
+  // Aksi kontak dari nomor telepon. wa = angka internasional untuk wa.me (kosong bila tidak valid); tel = nomor dengan + untuk tel:/sms:.
+  // Nomor Indonesia harus ponsel (62 + 8xx, 9–12 digit sesudah 62); nomor luar negeri diterima 8–15 digit.
+  function phoneActions(phone) {
+    const wa = waNumber(phone); if (!wa) return { ok: false, wa: '', tel: '' };
+    if (wa.startsWith('62') && !/^628\d{8,11}$/.test(wa)) return { ok: false, wa: '', tel: '+' + wa };
+    return { ok: true, wa, tel: '+' + wa };
+  }
+  function waUrl(phone, text) { const a = phoneActions(phone); return a.ok ? 'https://wa.me/' + a.wa + (text ? '?text=' + encodeURIComponent(text) : '') : ''; }
+
   // ICS: pengingat nyata di HP lewat aplikasi Kalender (jalan walau aplikasi ini tertutup).
   const icsEsc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c);
   function icsFold(line) {
@@ -596,7 +759,7 @@
   // items: [{uid,title,date:'YYYY-MM-DD',time:'HH:MM',rrule?,alarmMin?,desc?}] -> teks .ics (waktu "mengambang" = jam lokal pengguna)
   function buildICS(items, nowISO) {
     const stamp = String(nowISO || new Date().toISOString()).replace(/[-:]/g, '').replace(/\.\d+/, '');
-    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//RUMAHKU-ONE Lite//ID', 'CALSCALE:GREGORIAN'];
+    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Rumahku//ID', 'CALSCALE:GREGORIAN'];
     items.forEach((it) => {
       if (!it.date) return;
       const alarms = (it.alarms && it.alarms.length ? it.alarms : [it.alarmMin]).map((m) => +m || 0);
@@ -630,10 +793,10 @@
 
   return {
     uid, dstr, today, parseD, addDays, addMonths, nextDate, cmp,
-    completeTask, expandEvent, fmtNum, fmtIDR, parseAmount, installmentInfo, applyBillPayment, liveTx, balances, netWorth,
+    completeTask, expandEvent, fmtIDR, parseAmount, liveTx, balances, netWorth,
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
-    kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
+    kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, billState, billLedger, billPayPlan, applyBillPay, voidBillPay, billMonthSummary, billEndDate, billOccAfter, billLive, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
-    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, isBirthdayTitle, remindList, remindLabel, eventDue, birthdayDue, ALLDAY_REF, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, waterCfg, waterDay, waterAdd, waterUndoLast, waterTimes, waterDue, waterHistory, inQuiet, isWeekend, phoneActions, waUrl, calendarItems, isBirthdayTitle, remindList, remindLabel, eventDue, birthdayDue, ALLDAY_REF, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
   };
 });
