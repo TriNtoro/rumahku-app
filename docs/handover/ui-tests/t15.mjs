@@ -14,7 +14,7 @@ const setv=(o)=>p.evaluate((o)=>{ for(const [k,v] of Object.entries(o)){ const e
 const submit=()=>p.evaluate(()=>{const f=document.querySelector('#dlg form'); f.requestSubmit();});
 const store=()=>p.evaluate(()=>JSON.parse(localStorage.getItem('rk1.store')));
 const recs=async(t)=>Object.values((await store()).rec).filter(r=>r._t===t&&!r._d);
-let t=await txt(); ok(/v0\.5\.7/.test(t),'Versi v0.5.7');
+let t=await txt(); ok(/v1\.0/.test(t),'Versi v0.5.7');
 await click('#nav [data-v=more]'); t=await txt(); ok(/Tagihan & angsuran/.test(t),'Lainnya: Tagihan & angsuran');
 await click('[data-a=nav][data-to=tagihan]'); t=await txt(); ok(/Tagihan/i.test(t)&&/Sisa kewajiban|Isi total/.test(t),'Halaman tagihan: dashboard');
 // 14 jenis

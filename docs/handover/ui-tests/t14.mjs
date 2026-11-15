@@ -9,7 +9,7 @@ const dlgT=()=>p.evaluate(()=>document.getElementById('dlg').innerText);
 const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m); if(!c)process.exitCode=1;}; const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 const fill=async(vals)=>{ await p.evaluate((v)=>{const f=[...document.querySelectorAll('#dlg input,#dlg textarea,#dlg select')].filter(x=>x.type!=='file'&&x.type!=='checkbox'); v.forEach((x,i)=>{ if(x==null||!f[i])return; f[i].value=x; f[i].dispatchEvent(new Event('input',{bubbles:true}));});},vals); };
 const submit=()=>p.evaluate(()=>{const b=[...document.querySelectorAll('#dlg button')].find(x=>/Simpan|OK|Buka|Selesai|Pulihkan|Ya/i.test(x.textContent)&&!/Lupa|Salin/.test(x.textContent)); b.click();});
-let t=await txt(); ok(/v0\.5\.7/.test(t),'Versi v0.5.5');
+let t=await txt(); ok(/v1\.0/.test(t),'Versi v0.5.5');
 // dokumen dulu tanpa password
 await p.evaluate(()=>{ const r=window.__rk; });
 await click('#nav [data-v=more]'); t=await txt(); ok(/Dokumen penting/.test(t)&&/Kunci dokumen penting/.test(t),'Lainnya: Dokumen penting + Kunci dokumen penting');

@@ -6,7 +6,7 @@ await p.goto('http://localhost:8099/index.html',{waitUntil:'networkidle0'}); awa
 const click=(q)=>p.evaluate((s)=>{const e=document.querySelector(s); if(!e) throw new Error('tak ada '+s); e.click();},q);
 const txt=()=>p.evaluate(()=>document.getElementById('top').innerText+'\n'+document.getElementById('main').innerText);
 const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m); if(!c)process.exitCode=1;}; const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-let t=await txt(); ok(/v0\.5\.7/.test(t),'Versi v0.5.4');
+let t=await txt(); ok(/v1\.0/.test(t),'Versi v0.5.4');
 // data contoh
 await click('#nav [data-v=more]'); await click('[data-a=nav][data-to=bantuan]'); await sleep(100);
 await p.evaluate(()=>{const b=[...document.querySelectorAll('button')].find(x=>/data contoh/i.test(x.textContent)&&/Isi|Tambah/i.test(x.textContent)); if(b) b.click(); });
