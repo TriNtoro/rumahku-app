@@ -31,7 +31,15 @@
   };
   const vehPlansFor = (kind) => VEH_PLANS[kind] || VEH_PLANS.mobil;
   const VEH_KINDS = [['motor', 'Motor'], ['mobil', 'Mobil'], ['motor_ev', 'Motor listrik (EV)'], ['mobil_ev', 'Mobil listrik (EV)'], ['lain', 'Lainnya']];
-  const BILL_NAMES = ['Listrik PLN', 'Internet', 'PDAM / air', 'PBB', 'Iuran RT / sampah', 'Gas', 'Asuransi', 'Cicilan', 'Langganan streaming'];
+  const BILL_NAMES = ['Listrik PLN', 'Internet', 'PDAM / air', 'PBB', 'Iuran RT / sampah', 'Gas', 'Langganan streaming'];
+  const BILL_KINDS = [['tagihan', 'Tagihan (nominal berubah-ubah, mis. listrik)'], ['wajib', 'Kewajiban tetap (nominal pasti: asuransi, SPP, kas desa, arisan)'], ['cicilan', 'Cicilan / utang']];
+  const WAJIB_BY_MODE = {
+    pelajar: [['Uang kuliah / SPP', 'wajib'], ['Kos / kontrakan', 'wajib'], ['Kuota internet', 'tagihan'], ['Cicilan HP / laptop', 'cicilan']],
+    pekerja: [['Kos / kontrakan', 'wajib'], ['Asuransi', 'wajib'], ['BPJS Kesehatan', 'wajib'], ['Cicilan', 'cicilan'], ['Kirim orang tua', 'wajib']],
+    keluarga: [['SPP anak', 'wajib'], ['Les / kegiatan anak', 'wajib'], ['Asuransi', 'wajib'], ['BPJS Kesehatan', 'wajib'], ['Kas desa / iuran RT', 'wajib'], ['Arisan', 'wajib'], ['Iuran keamanan & kebersihan', 'wajib'], ['Cicilan KPR', 'cicilan'], ['Cicilan kendaraan', 'cicilan']],
+  };
+  const billItems = () => BILL_NAMES.map((n) => ({ name: n, kind: 'tagihan' })).concat((WAJIB_BY_MODE[modeOf() || 'pekerja']).map((x) => ({ name: x[0], kind: x[1] })));
+  const BILL_CAT = { tagihan: 'Tagihan', wajib: 'Kewajiban tetap', cicilan: 'Cicilan' };
 
   // ---------- state ----------
   function readJSON(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
@@ -80,7 +88,8 @@
     const val = v == null ? '' : v;
     if (f.type === 'check') return `<label class="f c"><input type="checkbox" name="${f.k}" ${val ? 'checked' : ''}> ${esc(f.label)}</label>`;
     let inner;
-    if (f.type === 'select') inner = `<select name="${f.k}">${f.opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
+    if (f.type === 'photo') inner = `<input name="${f.k}" type="file" accept="image/*">`;
+    else if (f.type === 'select') inner = `<select name="${f.k}" ${f.addList ? 'data-add="' + f.addList + '"' : ''}>${f.opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}${f.addList ? '<option value="__new">➕ Tambah baru…</option>' : ''}</select>`;
     else if (f.type === 'textarea') inner = `<textarea name="${f.k}" rows="3">${esc(val)}</textarea>`;
     else if (f.type === 'amount') inner = `<input name="${f.k}" inputmode="numeric" autocomplete="off" placeholder="mis. 25.000" value="${esc(val)}">`;
     else if (f.type === 'dec') inner = `<input name="${f.k}" inputmode="decimal" autocomplete="off" placeholder="${esc(f.ph || '')}" value="${esc(val)}">`;
@@ -89,10 +98,20 @@
     return `<label class="f">${esc(f.label)}${f.req ? ' *' : ''}${inner}</label>`;
   }
   // fields: [{k,label,type,req,opts,list}], onOk(values) -> pesan error (string) atau undefined
-  function openForm(title, fields, init, onOk, extras, note) {
+  function openForm(title, fields, init, onOk, extras, note, onChange) {
     init = init || {};
     dlg.innerHTML = `<form method="dialog" novalidate><h3>${esc(title)}</h3>${note ? `<p class="note" style="margin:0">${esc(note)}</p>` : ''}${fields.map((f) => fieldHTML(f, init[f.k])).join('')}<div class="err" id="ferr"></div><div class="btns"><button type="button" class="btn alt" id="fcancel">Batal</button><button class="btn" id="fok" type="submit">Simpan</button></div>${(extras || []).length ? `<div class="btns">${extras.map((x, i) => `<button type="button" class="btn bad sm" data-x="${i}">${esc(x.label)}</button>`).join('')}</div>` : ''}</form>`;
     const form = dlg.querySelector('form');
+    form.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el.tagName === 'SELECT' && el.value === '__new' && el.dataset.add) {
+        const nm = (window.prompt('Nama baru (mis. ' + (el.dataset.add === 'inc' ? 'Dari orang tua' : 'Arisan') + '):') || '').trim().slice(0, 40);
+        const nw = el.querySelector('option[value="__new"]');
+        if (nm) { saveOpt(el.dataset.add, nm); let o = [...el.options].find((x) => x.value === nm); if (!o) { o = document.createElement('option'); o.value = nm; o.textContent = nm; el.insertBefore(o, nw); } el.value = nm; }
+        else el.selectedIndex = 0;
+      }
+      if (onChange) onChange(form, e);
+    });
     form.addEventListener('click', (e) => {
       if (e.target.id === 'fcancel') closeDlg();
       const xi = e.target.dataset && e.target.dataset.x;
@@ -103,7 +122,7 @@
       const v = {};
       for (const f of fields) {
         const el = form.elements[f.k];
-        v[f.k] = f.type === 'check' ? el.checked : String(el.value || '').trim();
+        v[f.k] = f.type === 'check' ? el.checked : f.type === 'photo' ? ((el.files && el.files[0]) || null) : String(el.value || '').trim();
         if (f.req && !v[f.k]) { form.querySelector('#ferr').textContent = `"${f.label}" wajib diisi.`; return; }
       }
       const err = onOk(v);
@@ -122,7 +141,35 @@
     dlg.showModal();
   }
   const confirmBox = (msg, yes) => openMenu(msg, [{ label: 'Ya, lanjutkan', fn: yes }]);
+  const BANKS = ['BCA', 'Mandiri', 'BRI', 'BNI', 'BSI', 'CIMB Niaga', 'Permata', 'Danamon', 'BTN', 'SeaBank', 'Jago', 'blu by BCA', 'Allo Bank', 'Jenius', 'GoPay', 'OVO', 'DANA', 'ShopeePay', 'LinkAja', 'Dompet tunai'];
   const accOpts = () => list('acc').map((a) => [a.id, a.name]);
+
+  // ---------- mode pengguna & daftar sumber dana / kategori (bisa ditambah sendiri) ----------
+  const MODES = [['pelajar', '🎓 Pelajar / mahasiswa'], ['pekerja', '💼 Pekerja (belum punya pasangan resmi)'], ['keluarga', '🏡 Berkeluarga (pasangan resmi, rumah, anak)']];
+  const modeOf = () => ((get('profile', 'profile') || {}).mode) || '';
+  const INC_BASE = {
+    pelajar: ['Uang saku orang tua', 'Beasiswa', 'Kerja paruh waktu', 'Hadiah / angpao', 'Jual barang', 'Investasi'],
+    pekerja: ['Gaji', 'Lembur', 'Freelance / sampingan', 'Bonus / THR', 'Investasi', 'Dari orang tua', 'Hadiah / angpao', 'Jual barang'],
+    keluarga: ['Gaji suami', 'Gaji istri', 'Bisnis / usaha', 'Bonus / THR', 'Investasi', 'Sewa', 'Dari orang tua', 'Hadiah / angpao', 'Jual barang'],
+  };
+  const EXP_BASE = {
+    pelajar: ['Makan & minum', 'Kos / kontrakan', 'Transport', 'Kuota & pulsa', 'Uang kuliah / SPP', 'Buku & alat kuliah', 'Nongkrong & hiburan', 'Kesehatan', 'Belanja', 'Kewajiban tetap', 'Lainnya'],
+    pekerja: ['Makan & minum', 'Kos / kontrakan', 'Transport', 'Tagihan', 'Kewajiban tetap', 'Cicilan', 'Belanja', 'Hiburan', 'Kencan & hadiah', 'Kirim orang tua', 'Kesehatan', 'Asuransi', 'Lainnya'],
+    keluarga: ['Uang dapur', 'Makan & minum', 'Transport', 'Tagihan', 'Kewajiban tetap', 'Cicilan', 'SPP & sekolah anak', 'Jajan anak', 'Belanja', 'Kesehatan', 'Asuransi', 'Kas desa / RT', 'Arisan', 'Kondangan & sosial', 'Zakat / sedekah / qurban', 'Rumah', 'Hiburan', 'Lainnya'],
+  };
+  const dedupe = (a) => a.filter((x, i) => x && a.indexOf(x) === i);
+  function optNames(kind) { // 'inc' | 'exp'
+    const base = (kind === 'inc' ? INC_BASE : EXP_BASE)[modeOf() || 'pekerja'];
+    const custom = list('opt').filter((o) => o.list === kind).sort((a, b) => C.cmp(a._u, b._u)).map((o) => o.name);
+    const used = list('tx').filter((t) => t.kind === (kind === 'inc' ? 'income' : 'expense')).map((t) => t.cat);
+    return dedupe(base.concat(custom, used));
+  }
+  function saveOpt(kind, name) {
+    name = String(name || '').trim(); if (!name) return;
+    if (list('opt').some((o) => o.list === kind && o.name.toLowerCase() === name.toLowerCase())) return;
+    C.put(store, 'opt', { list: kind, name }); persist(); scheduleSync();
+  }
+  const optSelect = (kind) => optNames(kind).map((n) => [n, n]);
 
   // ---------- form per modul ----------
   function taskForm(t) {
@@ -159,35 +206,52 @@
       commit();
     }, extras);
   }
+  async function attachProof(txId, file) {
+    let fr = null;
+    try {
+      const blob = await resizeBlob(file, 1400, 0.72), old = get('tx', txId);
+      fr = C.put(store, 'pfile', { personId: '', txId, label: 'Bukti transaksi', size: blob.size });
+      await IDB.put(fr.id, blob);
+      if (old && old.proof) { IDB.del(old.proof); C.remove(store, old.proof); }
+      C.put(store, 'tx', { id: txId, proof: fr.id }); commit(); toast('Bukti tersimpan di perangkat ini');
+    } catch (e) { if (fr) C.remove(store, fr.id); commit(); toast('Bukti gagal disimpan: ' + (e.message || 'penyimpanan penuh/dibatasi')); }
+  }
   function txForm(kind, pre) {
     if (!list('acc').length) { toast('Buat akun dulu (mis. Dompet)'); return accForm(); }
-    pre = pre || {};
-    const opts = accOpts();
+    pre = pre || {}; kind = kind || 'expense';
+    const opts = accOpts(), catList = (k) => { const l = optSelect(k === 'income' ? 'inc' : 'exp'); if (pre.cat && !l.some((x) => x[0] === pre.cat)) l.unshift([pre.cat, pre.cat]); return l; };
     openForm('Catat transaksi', [
-      { k: 'kind', label: 'Jenis', type: 'select', opts: [['expense', 'Pengeluaran'], ['income', 'Pemasukan'], ['transfer', 'Transfer antar akun']] },
-      { k: 'amount', label: 'Jumlah (Rp)', type: 'amount', req: true }, { k: 'acc', label: 'Akun', type: 'select', opts },
+      { k: 'kind', label: 'Jenis', type: 'select', opts: [['expense', 'Pengeluaran'], ['income', 'Pemasukan'], ['transfer', 'Transfer antar akun (pindah uang, bukan pengeluaran)']] },
+      { k: 'amount', label: 'Jumlah (Rp)', type: 'amount', req: true }, { k: 'acc', label: 'Akun / rekening (sumber dana)', type: 'select', opts },
       { k: 'to', label: 'Ke akun (hanya transfer)', type: 'select', opts: [['', '—']].concat(opts) },
-      { k: 'cat', label: 'Kategori', list: EXP_CATS.concat(['Gaji', 'Bonus']) }, { k: 'date', label: 'Tanggal', type: 'date', req: true }, { k: 'note', label: 'Catatan' },
-    ], { kind: kind || 'expense', date: C.today(), acc: opts[0][0], amount: pre.amount, cat: pre.cat, note: pre.note }, (v) => {
+      { k: 'cat', label: 'Sumber pemasukan / kategori pengeluaran', type: 'select', opts: catList(kind), addList: kind === 'income' ? 'inc' : 'exp' },
+      { k: 'date', label: 'Tanggal', type: 'date', req: true }, { k: 'note', label: 'Catatan' }, { k: 'proof', label: '📷 Foto bukti / struk (opsional)', type: 'photo' },
+    ], { kind, date: C.today(), acc: opts[0][0], amount: pre.amount, cat: pre.cat, note: pre.note }, (v) => {
       const amount = C.parseAmount(v.amount);
       if (amount == null || amount <= 0) return 'Jumlah harus bilangan bulat rupiah lebih dari 0 (tanpa desimal).';
       if (v.kind === 'transfer' && (!v.to || v.to === v.acc)) return 'Transfer perlu akun tujuan yang berbeda.';
-      C.put(store, 'tx', { kind: v.kind, amount, acc: v.acc, to: v.kind === 'transfer' ? v.to : '', cat: v.kind === 'transfer' ? '' : (v.cat || 'Lainnya'), date: v.date, note: v.note, cid: C.uid() });
+      const rec = C.put(store, 'tx', { kind: v.kind, amount, acc: v.acc, to: v.kind === 'transfer' ? v.to : '', cat: v.kind === 'transfer' ? '' : (v.cat && v.cat !== '__new' ? v.cat : 'Lainnya'), date: v.date, note: v.note, cid: C.uid() });
       commit(); toast('Tercatat: ' + rp(amount));
+      if (v.proof) attachProof(rec.id, v.proof);
+    }, null, null, (form, e) => {
+      if (e.target.name !== 'kind') return;
+      const k = e.target.value === 'income' ? 'inc' : 'exp', sel = form.elements.cat; sel.dataset.add = k;
+      sel.innerHTML = optSelect(k).map((o) => `<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('') + '<option value="__new">➕ Tambah baru…</option>';
     });
   }
   function accForm(a) {
     a = a || {};
     openForm(a.id ? 'Ubah akun' : 'Akun baru', [
-      { k: 'name', label: 'Nama akun', req: true },
+      { k: 'name', label: 'Nama akun / bank', req: true, list: BANKS },
       { k: 'type', label: 'Jenis', type: 'select', opts: [['kas', 'Kas / dompet'], ['bank', 'Bank'], ['ewallet', 'E-wallet'], ['kartu', 'Kartu kredit (saldo negatif = utang)'], ['invest', 'Investasi']] },
       { k: 'opening', label: 'Saldo awal (Rp; boleh minus untuk utang)', type: 'amount' },
-    ], { name: a.name, type: a.type || 'kas', opening: a.opening || '' }, (v) => {
+      { k: 'emergency', label: 'Akun ini dana darurat (dipakai menghitung level kesehatan keuangan)', type: 'check' },
+    ], { name: a.name, type: a.type || 'kas', opening: a.opening || '', emergency: !!a.emergency }, (v) => {
       let neg = false, raw = v.opening;
       if (raw.startsWith('-')) { neg = true; raw = raw.slice(1); }
       const n = raw === '' ? 0 : C.parseAmount(raw);
       if (n == null) return 'Saldo awal harus bilangan bulat rupiah.';
-      C.put(store, 'acc', { id: a.id, name: v.name, type: v.type, opening: neg ? -n : n }); commit();
+      C.put(store, 'acc', { id: a.id, name: v.name, type: v.type, opening: neg ? -n : n, emergency: v.emergency }); commit();
     }, a.id ? [{ label: 'Hapus akun', fn: () => {
       if (list('tx').some((t) => t.acc === a.id || t.to === a.id)) { toast('Akun punya transaksi; tidak bisa dihapus'); return false; }
       C.remove(store, a.id); commit();
@@ -196,7 +260,7 @@
   function budgetForm(b) {
     b = b || {};
     openForm(b.id ? 'Ubah anggaran' : 'Anggaran bulanan', [
-      { k: 'cat', label: 'Kategori pengeluaran', req: true, list: EXP_CATS }, { k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true },
+      { k: 'cat', label: 'Kategori pengeluaran', req: true, type: 'select', opts: (() => { const l = optSelect('exp'); if (b.cat && !l.some((x) => x[0] === b.cat)) l.unshift([b.cat, b.cat]); return l; })(), addList: 'exp' }, { k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true },
     ], { cat: b.cat, limit: b.limit || '' }, (v) => {
       const n = C.parseAmount(v.limit); if (n == null || n <= 0) return 'Batas harus bilangan bulat rupiah > 0.';
       C.put(store, 'budget', { id: b.id, cat: v.cat, limit: n }); commit();
@@ -295,13 +359,13 @@
   function billForm(b) {
     b = b || {};
     openForm(b.id ? 'Ubah tagihan' : 'Tagihan rutin baru', [
-      { k: 'name', label: 'Nama tagihan', req: true, list: BILL_NAMES }, { k: 'amountEst', label: 'Perkiraan nominal (Rp)', type: 'amount' },
+      { k: 'name', label: 'Nama tagihan / kewajiban', req: true, list: billItems().map((x) => x.name) }, { k: 'kind', label: 'Jenis', type: 'select', opts: BILL_KINDS }, { k: 'amountEst', label: 'Nominal (Rp; perkiraan untuk tagihan, pasti untuk kewajiban tetap)', type: 'amount' },
       { k: 'dueDay', label: 'Jatuh tempo tiap tanggal (1–31)', type: 'number', req: true },
       { k: 'paidThis', label: 'Sudah dibayar bulan ini', type: 'check' }, { k: 'notes', label: 'Catatan (nomor pelanggan tidak disarankan)', type: 'textarea' },
-    ], { name: b.name, amountEst: b.amountEst || '', dueDay: b.dueDay, notes: b.notes }, (v) => {
+    ], { name: b.name, kind: b.kind || 'tagihan', amountEst: b.amountEst || '', dueDay: b.dueDay, notes: b.notes }, (v) => {
       const d = +v.dueDay; if (!(d >= 1 && d <= 31)) return 'Tanggal harus 1–31.';
       const amt = v.amountEst === '' ? 0 : C.parseAmount(v.amountEst); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
-      C.put(store, 'bill', { id: b.id, name: v.name, amountEst: amt, dueDay: d, notes: v.notes, paidYM: v.paidThis ? nowYM() : b.paidYM, lastPaid: b.lastPaid }); commit();
+      C.put(store, 'bill', { id: b.id, name: v.name, kind: v.kind, amountEst: amt, dueDay: d, notes: v.notes, paidYM: v.paidThis ? nowYM() : b.paidYM, lastPaid: b.lastPaid }); commit();
     }, b.id ? [{ label: 'Hapus tagihan', fn: () => { C.remove(store, b.id); commit(); } }] : null);
   }
   function billPayForm(b) {
@@ -312,17 +376,18 @@
       const amt = v.amount === '' ? 0 : C.parseAmount(v.amount); if (amt == null) return 'Nominal harus bilangan bulat rupiah.';
       const period = C.billNext(b, C.today()).slice(0, 7);
       C.put(store, 'bill', { id: b.id, paidYM: period, lastPaid: v.date, lastAmount: amt });
-      if (v.acc && amt > 0) C.put(store, 'tx', { kind: 'expense', amount: amt, acc: v.acc, to: '', cat: 'Tagihan', date: v.date, note: b.name, cid: C.uid() });
+      if (v.acc && amt > 0) C.put(store, 'tx', { kind: 'expense', amount: amt, acc: v.acc, to: '', cat: BILL_CAT[b.kind] || 'Tagihan', date: v.date, note: b.name, cid: C.uid() });
       commit(); toast('Tagihan dibayar ✓');
     });
   }
   function billTemplateForm() {
-    openForm('Pilih tagihan rutin', BILL_NAMES.map((n, i) => ({ k: 'b' + i, label: n, type: 'check' })).concat([{ k: 'dueDay', label: 'Tanggal jatuh tempo sementara (1–31, ubah nanti per tagihan)', type: 'number', req: true }]), { dueDay: 20 }, (v) => {
+    const items = billItems();
+    openForm('Pilih tagihan & kewajiban tetap', items.map((x, i) => ({ k: 'b' + i, label: x.name + (x.kind === 'tagihan' ? '' : x.kind === 'wajib' ? ' (kewajiban tetap)' : ' (cicilan)'), type: 'check' })).concat([{ k: 'dueDay', label: 'Tanggal jatuh tempo sementara (1–31, ubah nanti per item)', type: 'number', req: true }]), { dueDay: 20 }, (v) => {
       const d = +v.dueDay; if (!(d >= 1 && d <= 31)) return 'Tanggal harus 1–31.';
-      let n = 0; BILL_NAMES.forEach((name, i) => { if (v['b' + i]) { n++; C.put(store, 'bill', { name, amountEst: 0, dueDay: d }); } });
+      let n = 0; items.forEach((x, i) => { if (v['b' + i]) { n++; C.put(store, 'bill', { name: x.name, kind: x.kind, amountEst: 0, dueDay: d }); } });
       if (!n) return 'Centang minimal satu.';
-      commit(); toast(n + ' tagihan ditambahkan; isi nominal & tanggal asli lewat ketuk nama tagihan');
-    });
+      commit(); toast(n + ' item ditambahkan; isi nominal & tanggal asli lewat ketuk namanya');
+    }, null, modeOf() ? '' : 'Pilih mode di Profil saya agar daftar sesuai kebutuhan Anda.');
   }
   // ---------- template cepat untuk semua modul (centang, tambah; semuanya bisa diubah lagi) ----------
   function pickTemplates(title, items, labelFn, makeFn, note, extraFields, extraInit) {
@@ -340,7 +405,7 @@
     inv: [['Beras', 'kg', 2], ['Gas LPG 3 kg', 'tabung', 1], ['Galon air minum', 'galon', 1], ['Minyak goreng', 'liter', 1], ['Telur', 'kg', 1], ['Gula', 'kg', 1], ['Garam', 'bungkus', 1], ['Sabun mandi', 'pcs', 2], ['Sabun cuci piring', 'pcs', 1], ['Deterjen', 'pcs', 1], ['Tisu', 'pak', 2], ['Obat P3K (plester, antiseptik)', 'set', 1], ['Obat demam', 'strip', 1], ['Lampu cadangan', 'pcs', 1]],
     contact: [['Polisi', 'Darurat', '110', true], ['Ambulans', 'Darurat', '118', true], ['Pemadam kebakaran', 'Darurat', '113', true], ['SAR / Basarnas', 'Darurat', '115', true], ['Nomor darurat umum', 'Darurat', '112', true], ['PLN (gangguan listrik)', 'Layanan', '123', false], ['Ketua RT', 'Lingkungan', '', false], ['Satpam / keamanan', 'Lingkungan', '', false], ['Tukang listrik', 'Tukang', '', false], ['Tukang ledeng', 'Tukang', '', false], ['Tukang AC', 'Tukang', '', false], ['Dokter keluarga', 'Kesehatan', '', false], ['Bengkel langganan', 'Kendaraan', '', false], ['Sekolah anak', 'Keluarga', '', false]],
     doc: ['Kartu Keluarga', 'Sertifikat rumah (SHM/HGB)', 'PBB (bukti bayar tahunan)', 'Polis asuransi', 'BPKB kendaraan', 'Buku nikah', 'Akta kelahiran anak', 'Ijazah', 'Paspor', 'Surat wasiat / dokumen waris', 'Kartu BPJS', 'Kontrak kerja'],
-    acc: [['Dompet', 'kas'], ['Rekening bank utama', 'bank'], ['Tabungan darurat', 'bank'], ['E-wallet (GoPay/OVO/DANA)', 'ewallet'], ['Kartu kredit', 'kartu'], ['Investasi (saham/reksa dana)', 'invest']],
+    acc: [['Dompet tunai', 'kas'], ['BCA', 'bank'], ['Mandiri', 'bank'], ['BRI', 'bank'], ['BNI', 'bank'], ['SeaBank', 'bank'], ['Jago', 'bank'], ['Dana darurat (rekening terpisah)', 'bank', true], ['GoPay', 'ewallet'], ['OVO', 'ewallet'], ['DANA', 'ewallet'], ['ShopeePay', 'ewallet'], ['Kartu kredit', 'kartu'], ['Investasi (saham/reksa dana)', 'invest']],
     habit: ['Olahraga 30 menit', 'Baca buku', 'Tidur sebelum jam 10 malam', 'Jalan pagi', 'Tanpa gula/minuman manis', 'Tulis syukur hari ini', 'Waktu berkualitas dengan keluarga'],
     task: [['Belanja bulanan', 'monthly', 'Rumah'], ['Bersih-bersih rumah', 'weekly', 'Rumah'], ['Ganti sprei', 'weekly', 'Rumah'], ['Cek tabung gas & galon', 'monthly', 'Rumah'], ['Review keuangan bulanan', 'monthly', 'Pribadi'], ['Laporan kerja mingguan', 'weekly', 'Pekerjaan'], ['Backup data penting', 'monthly', 'Pribadi'], ['Telepon orang tua', 'weekly', 'Keluarga']],
   };
@@ -355,11 +420,11 @@
     inv() { pickTemplates('Pilih barang stok', TPL.inv, (t) => t[0] + ' (min ' + t[2] + ' ' + t[1] + ')', (t) => C.put(store, 'inv', { name: t[0], qty: 0, unit: t[1], min: t[2] }), 'Jumlah awal 0; atur stok sebenarnya dengan tombol + / −.'); },
     contact() { pickTemplates('Pilih kontak', TPL.contact, (t) => t[0] + (t[2] ? ' · ' + t[2] : ''), (t) => C.put(store, 'contact', { name: t[0], role: t[1], phone: t[2], emergency: t[3] }), 'Nomor darurat Indonesia sudah terisi. Kontak tanpa nomor: isi sendiri.'); },
     doc() { pickTemplates('Pilih dokumen', TPL.doc, (t) => t, (t) => C.put(store, 'doc', { title: t, expiry: '', place: '' }), 'Isi lokasi simpan dan masa berlaku setelah ditambahkan.'); },
-    acc() { pickTemplates('Pilih akun', TPL.acc, (t) => t[0], (t) => C.put(store, 'acc', { name: t[0], type: t[1], opening: 0 }), 'Saldo awal 0. Ketuk akun untuk mengisi saldo sebenarnya.'); },
+    acc() { pickTemplates('Pilih akun', TPL.acc, (t) => t[0], (t) => C.put(store, 'acc', { name: t[0], type: t[1], opening: 0, emergency: !!t[2] }), 'Saldo awal 0. Ketuk akun untuk mengisi saldo sebenarnya.'); },
     habit() { pickTemplates('Pilih kebiasaan', TPL.habit, (t) => t, (t) => C.put(store, 'habit', { name: t, log: [] })); },
     task() { pickTemplates('Pilih tugas berulang', TPL.task, (t) => t[0] + ' · ' + (t[1] === 'weekly' ? 'tiap minggu' : 'tiap bulan'), (t, v) => { C.put(store, 'task', { title: t[0], due: C.today(), repeat: t[1], label: t[2], anchorDay: C.parseD(C.today()).getDate(), done: false, prio: '0' }); }, 'Tenggat pertama hari ini; ubah lewat ketuk tugas.'); },
     budget() {
-      pickTemplates('Pilih kategori anggaran', EXP_CATS, (t) => t, (t, v) => { const n = C.parseAmount(v.limit); if (n == null || n <= 0) return 'Batas harus bilangan bulat rupiah > 0.'; C.put(store, 'budget', { cat: t, limit: n }); }, 'Batas sama untuk semua yang dicentang; ubah per kategori setelahnya.', [{ k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true }], { limit: '500.000' });
+      pickTemplates('Pilih kategori anggaran', optNames('exp').filter((x) => !/^(Lainnya|Kewajiban tetap|Cicilan)$/.test(x)), (t) => t, (t, v) => { const n = C.parseAmount(v.limit); if (n == null || n <= 0) return 'Batas harus bilangan bulat rupiah > 0.'; C.put(store, 'budget', { cat: t, limit: n }); }, 'Batas sama untuk semua yang dicentang; ubah per kategori setelahnya.', [{ k: 'limit', label: 'Batas per bulan (Rp)', type: 'amount', req: true }], { limit: '500.000' });
     },
   };
   // --- Rumah: aset, stok, kontak, dokumen ---
@@ -417,7 +482,7 @@
   }
 
   // ---------- v0.3: profil, rutinitas, keluarga, afeksi ----------
-  const REL = ['Istri', 'Suami', 'Pasangan', 'Anak', 'Orang tua', 'Mertua', 'Saudara', 'Lainnya'];
+  const REL = ['Istri', 'Suami', 'Pasangan', 'Pacar', 'Tunangan', 'Anak', 'Orang tua', 'Mertua', 'Saudara', 'Lainnya'];
   const ID_KINDS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan', 'Akta lahir', 'Lainnya'];
   const FILE_LABELS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'Akta lahir', 'Foto', 'Lainnya'];
   const RT_EMOJI = ['💧', '💊', '🏃', '👀', '💌', '📖', '🧘', '🍎', '😴', '⭐'];
@@ -528,8 +593,9 @@
     openForm('Profil saya', [
       { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Nama panggilan (dipakai di sapaan)' }, { k: 'birth', label: 'Tanggal lahir saya (muncul di kalender)', type: 'date' },
       { k: 'callKid', label: 'Sebutan Anda untuk anak (mis. Papa, Ayah, Bunda)' },
+      { k: 'mode', label: 'Saya adalah… (menentukan kategori, tujuan, dan target keuangan)', type: 'select', opts: [['', '— pilih —']].concat(MODES) },
       { k: 'sex', label: 'Jenis kelamin (untuk fitur berat badan)', type: 'select', opts: [['', '— pilih —'], ['L', 'Laki-laki'], ['P', 'Perempuan']] }, { k: 'height', label: 'Tinggi badan (cm)', type: 'dec', ph: 'mis. 165' },
-    ], { name: p.name, nick: p.nick, birth: p.birth || '', callKid: p.callKid || '', sex: p.sex || '', height: p.height || '' }, (v) => { const h = parseDec(v.height); if (v.height && (!h || h < 80 || h > 250)) return 'Tinggi badan harus antara 80–250 cm.'; C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, birth: v.birth, callKid: v.callKid, sex: v.sex, height: h || '' }); commit(); toast('Profil disimpan'); },
+    ], { name: p.name, nick: p.nick, birth: p.birth || '', callKid: p.callKid || '', sex: p.sex || '', height: p.height || '', mode: p.mode || '' }, (v) => { const h = parseDec(v.height); if (v.height && (!h || h < 80 || h > 250)) return 'Tinggi badan harus antara 80–250 cm.'; C.put(store, 'profile', { id: 'profile', name: v.name, nick: v.nick, birth: v.birth, callKid: v.callKid, sex: v.sex, height: h || '', mode: v.mode }); commit(); toast('Profil disimpan'); },
     null, 'Nama ini dipakai untuk sapaan "Selamat pagi, …" dan draf kabar. Tersimpan di perangkat Anda (dan di Drive bila sinkron aktif).');
   }
 
@@ -723,11 +789,16 @@
     let blob = null; try { blob = await IDB.get(f.id); } catch (e) { /* abaikan */ }
     if (!blob) return toast('Berkas ini tersimpan di perangkat lain / belum ada di sini');
     const url = URL.createObjectURL(blob);
-    dlg.innerHTML = `<div class="menu"><h3>${esc(f.label)}</h3><img src="${url}" alt="${esc(f.label)}" style="width:100%;border-radius:12px"><button class="btn alt" data-i="s">Simpan ke galeri/unduhan</button><button class="btn bad sm" data-i="d">Hapus berkas</button><button class="btn alt sm" data-i="x">Tutup</button></div>`;
+    dlg.innerHTML = `<div class="menu"><h3>${esc(f.label)}</h3><img src="${url}" alt="${esc(f.label)}" style="width:100%;border-radius:12px"><button class="btn" data-i="sh">Kirim / bagikan</button><button class="btn alt" data-i="s">Simpan ke galeri/unduhan</button><button class="btn bad sm" data-i="d">Hapus berkas</button><button class="btn alt sm" data-i="x">Tutup</button></div>`;
     dlg.querySelector('.menu').addEventListener('click', (e) => {
       const i = e.target.dataset && e.target.dataset.i; if (!i) return;
       if (i === 's') { const a = document.createElement('a'); a.href = url; a.download = (f.label || 'berkas') + '.jpg'; document.body.appendChild(a); a.click(); a.remove(); return; }
-      if (i === 'd') { IDB.del(f.id); C.remove(store, f.id); commit(); }
+      if (i === 'sh') {
+        const file = new File([blob], (f.label || 'berkas') + '.jpg', { type: blob.type || 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file], title: f.label }).catch(() => {}); else toast('Perangkat ini belum mendukung kirim langsung; pakai Simpan lalu kirim dari galeri.');
+        return;
+      }
+      if (i === 'd') { IDB.del(f.id); C.remove(store, f.id); if (f.txId && get('tx', f.txId)) C.put(store, 'tx', { id: f.txId, proof: '' }); commit(); }
       closeDlg();
     });
     dlg.addEventListener('close', () => URL.revokeObjectURL(url), { once: true });
@@ -789,7 +860,8 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE</div><div class="s">Dibuat oleh <b>Illusix</b>. Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
+const APP_VERSION = '0.5', APP_DATE = '15 Nov 2026';
+  const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
     const log = x.log || [], on = log.includes(t);
@@ -880,13 +952,13 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
     const items = todayItems();
     const tasks = list('task').filter((x) => !x.done && x.due && x.due <= t).sort(byDue);
     const rts = list('rt').filter((r) => !r.paused && C.routineActiveOn(r, t)).sort((a, b) => C.cmp(a.from || '', b.from || ''));
-    let h = `<div class="card" style="padding:0;overflow:hidden">${HOUSE_SVG}</div>${ownerName() ? '' : '<div class="card pad" data-a="profilEdit" style="cursor:pointer"><div class="t">👋 Siapa nama Anda?</div><div class="s">Ketuk untuk mengisi, supaya sapaan jadi personal.</div></div>'}<div class="card hero pad" data-a="tab" data-v="money" style="cursor:pointer"><div class="s">Kekayaan bersih</div><div class="big">${accs.length ? rp(nw) : 'Mulai catat uang'}</div><div class="s">${accs.length ? 'Bulan ini +' + rp(rep.income) + ' · −' + rp(rep.expense) : 'Ketuk untuk menambah akun pertama'}</div></div>`;
+    let h = `<div class="card" style="padding:0;overflow:hidden">${HOUSE_SVG}</div>${modeOf() ? '' : '<div class="card pad" data-a="profilEdit" style="cursor:pointer"><div class="t">🧭 Pilih mode Anda</div><div class="s">Pelajar, pekerja, atau berkeluarga: kategori, target, dan tujuan keuangan menyesuaikan. Ketuk untuk memilih.</div></div>'}${ownerName() ? '' : '<div class="card pad" data-a="profilEdit" style="cursor:pointer"><div class="t">👋 Siapa nama Anda?</div><div class="s">Ketuk untuk mengisi, supaya sapaan jadi personal.</div></div>'}<div class="card hero pad" data-a="tab" data-v="money" style="cursor:pointer"><div class="s">Kekayaan bersih</div><div class="big">${accs.length ? rp(nw) : 'Mulai catat uang'}</div><div class="s">${accs.length ? 'Bulan ini +' + rp(rep.income) + ' · −' + rp(rep.expense) : 'Ketuk untuk menambah akun pertama'}</div></div>`;
     if (!list('rt').length) h += '<div class="card pad" data-a="nav" data-to="harian" style="cursor:pointer"><div class="t">💧 Atur target minum air &amp; rutinitas harian</div><div class="s">Ketuk, lalu pilih template "Minum air 2 liter" (8 gelas, diingatkan tiap jam).</div></div>';
     if (rts.length) h += `<h2>Rutinitas hari ini</h2>${rts.slice(0, 4).map((r) => rtCard(r)).join('')}${rts.length > 4 ? `<button class="btn alt full" data-a="nav" data-to="harian">Lihat semua (${rts.length})</button>` : ''}`;
     h += `<h2>Hari ini</h2><div class="card">${items.length ? items.map((r) => `<div class="hr" data-a="nav" data-to="${r[3]}">${ic(r[0], r[1])}<div class="grow t" style="font-weight:600">${r[2]}</div><span class="chev">›</span></div>`).join('') : '<div class="empty">Belum ada yang perlu diperhatikan. Mulai dengan tombol + atau isi data contoh di Lainnya → Bantuan.</div>'}</div>`;
     if (tasks.length) h += `<h2>Agenda tugas</h2><div class="card">${tasks.map((x) => taskRow(x, t)).join('')}</div>`;
     h += `<h2>Menu</h2><div class="tiles">${[['🛠️', 'Rumah', 'tab:rumah'], ['🔧', 'Perawatan', 'perawatan'], ['🧾', 'Tagihan', 'tagihan'], ['🚗', 'Kendaraan', 'kendaraan'], ['🛒', 'Belanja', 'stok'], ['✅', 'Tugas', 'tugas'], ['📓', 'Jurnal', 'jurnal'], ['🌱', 'Kebiasaan', 'habit'], ['💧', 'Rutinitas', 'harian'], ['👨‍👩‍👧', 'Keluarga', 'keluarga'], ['💌', 'Kabar & afeksi', 'afeksi'], ['🔔', 'Notifikasi', 'notif']].map((m) => `<div class="tile" data-a="nav" data-to="${m[2]}" role="button" tabindex="0"><span class="em">${m[0]}</span>${m[1]}</div>`).join('')}</div>`;
-    return { title: greet, sub: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(), html: h };
+    return { title: greet, sub: DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(), html: h + '<p class="note" style="text-align:center">RUMAHKU-ONE v' + APP_VERSION + ' · Dibuat oleh Illusix</p>' };
   }
 
   function vRumah() {
@@ -936,22 +1008,154 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
     return { title: 'Kalender', sub: '', html: h };
   }
 
+  // ---------- grafik SVG (warna lewat variabel CSS --s1..--s8; teks selalu memakai token teks) ----------
+  const SC = (i) => 'var(--s' + ((i % 8) + 1) + ')';
+  const cj = (n) => { const a = Math.abs(n), sg = n < 0 ? '−' : ''; if (a >= 1e9) return sg + (a / 1e9).toFixed(1).replace('.', ',') + ' M'; if (a >= 1e6) return sg + (a / 1e6).toFixed(1).replace('.', ',') + ' jt'; if (a >= 1e3) return sg + Math.round(a / 1e3) + ' rb'; return sg + a; };
+  const nice = (v) => { const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; };
+  const pc = (n) => String(n).replace('.', ',') + '%';
+  function donutSVG(slices, top, sub, aria) {
+    const R = 68, W = 22, c = 2 * Math.PI * R; let off = 0;
+    const segs = slices.map((s, i) => {
+      const len = Math.max(0, (s.pct / 100) * c - (slices.length > 1 ? 2 : 0));
+      const el = `<circle cx="100" cy="100" r="${R}" fill="none" style="stroke:${SC(i)}" stroke-width="${W}" stroke-dasharray="${len.toFixed(2)} ${(c - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"><title>${esc(s.name)}: ${rp(s.amount)} (${pc(s.pct)})</title></circle>`;
+      off += (s.pct / 100) * c; return el;
+    }).join('');
+    return `<svg viewBox="0 0 200 200" role="img" aria-label="${esc(aria)}" style="width:min(230px,68%);display:block;margin:4px auto 8px"><g transform="rotate(-90 100 100)"><circle cx="100" cy="100" r="${R}" fill="none" style="stroke:var(--line)" stroke-width="${W}"/>${segs}</g><text x="100" y="99" text-anchor="middle" font-size="22" font-weight="700" style="fill:var(--ink)">${esc(top)}</text><text x="100" y="118" text-anchor="middle" font-size="11" style="fill:var(--mute)">${esc(sub)}</text></svg>`;
+  }
+  const legendList = (slices, cls) => slices.map((s, i) => `<div class="row" style="min-height:44px;padding:8px 0"><span class="dot" style="background:${SC(i)}"></span><div class="grow t" style="font-weight:600">${esc(s.name)}</div><span class="s">${pc(s.pct)}</span><b class="${cls}" style="min-width:92px;text-align:right">${rp(s.amount)}</b></div>`).join('');
+  function cumChart(cum, ym) {
+    const n = cum.inc.length; if (!n) return '';
+    const W = 320, H = 190, L = 40, R = 14, T = 16, B = 26, mx = Math.max(1, cum.inc[n - 1], cum.exp[n - 1]), yMax = nice(mx);
+    const X = (i) => L + (n === 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R)), Y = (v) => T + (1 - v / yMax) * (H - T - B);
+    let g = ''; for (let k = 0; k <= 3; k++) { const v = (yMax * k) / 3; g += `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" style="stroke:var(--line)" stroke-width="1"/><text x="${L - 5}" y="${(Y(v) + 3).toFixed(1)}" font-size="9" text-anchor="end" style="fill:var(--mute)">${cj(v)}</text>`; }
+    const pl = (arr, i) => `<polyline points="${arr.map((v, j) => X(j).toFixed(1) + ',' + Y(v).toFixed(1)).join(' ')}" fill="none" style="stroke:${SC(i)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const lastI = cum.inc[n - 1] >= cum.exp[n - 1];
+    const end = (arr, i, above, label) => `<circle cx="${X(n - 1).toFixed(1)}" cy="${Y(arr[n - 1]).toFixed(1)}" r="4" style="fill:${SC(i)};stroke:var(--card)" stroke-width="2"/><text x="${(W - R).toFixed(1)}" y="${(Y(arr[n - 1]) + (above ? -9 : 15)).toFixed(1)}" font-size="10" font-weight="700" text-anchor="end" style="fill:var(--ink)">${label} ${cj(arr[n - 1])}</text>`;
+    const hit = cum.inc.map((_, j) => { const w = (W - L - R) / n; return `<rect class="cz" data-a="chartDay" data-t="${esc('Tgl ' + (j + 1) + ' ' + MONTHS[+ym.slice(5, 7) - 1] + ' · Masuk ' + rp(cum.inc[j]) + ' · Keluar ' + rp(cum.exp[j]) + ' (akumulasi)')}" x="${(X(j) - w / 2).toFixed(1)}" y="${T}" width="${w.toFixed(1)}" height="${H - T - B}" fill="transparent"><title>Tgl ${j + 1}: Masuk ${rp(cum.inc[j])} · Keluar ${rp(cum.exp[j])}</title></rect>`; }).join('');
+    const xl = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i).map((j) => `<text x="${X(j).toFixed(1)}" y="${H - 8}" font-size="9" text-anchor="${j === 0 ? 'start' : j === n - 1 ? 'end' : 'middle'}" style="fill:var(--mute)">${j + 1}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik akumulasi masuk dan keluar harian" style="width:100%;height:auto">${g}${pl(cum.inc, 0)}${pl(cum.exp, 1)}${end(cum.inc, 0, lastI, 'Masuk')}${end(cum.exp, 1, !lastI, 'Keluar')}${xl}${hit}</svg><div class="inl" style="gap:14px;margin-top:2px"><span class="s"><span class="dot" style="background:${SC(0)}"></span> Masuk</span><span class="s"><span class="dot" style="background:${SC(1)}"></span> Keluar</span><span class="s" style="margin-left:auto">akumulasi harian</span></div><div class="s" id="rd" style="min-height:20px;margin-top:4px">Ketuk grafik untuk melihat angka tiap hari.</div>`;
+  }
+  function nwBars(pts) {
+    const W = 320, H = 160, L = 8, R = 8, T = 22, B = 22, vals = pts.map((p) => p.v), mx = Math.max(1, ...vals), mn = Math.min(0, ...vals), span = mx - mn || 1;
+    const Y = (v) => T + (1 - (v - mn) / span) * (H - T - B), bw = Math.min(34, (W - L - R) / pts.length - 10), step = (W - L - R) / pts.length;
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Kekayaan bersih akhir bulan, ${pts.length} bulan terakhir" style="width:100%;height:auto"><line x1="${L}" x2="${W - R}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" style="stroke:var(--line)"/>${pts.map((p, i) => { const x = L + step * i + (step - bw) / 2, y0 = Y(0), y1 = Y(p.v), top = Math.min(y0, y1), h = Math.max(2, Math.abs(y1 - y0)); return `<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="4" style="fill:${p.v < 0 ? SC(1) : SC(0)}"><title>${esc(p.label)}: ${rp(p.v)}</title></rect><text x="${(x + bw / 2).toFixed(1)}" y="${(top - 5).toFixed(1)}" font-size="9" text-anchor="middle" style="fill:var(--ink)">${cj(p.v)}</text><text x="${(x + bw / 2).toFixed(1)}" y="${H - 7}" font-size="9" text-anchor="middle" style="fill:var(--mute)">${esc(p.label)}</text>`; }).join('')}</svg>`;
+  }
+
+  // ---------- level kesehatan keuangan, tujuan, rekap ----------
+  function healthInfo() {
+    const accs = list('acc'), txs = list('tx'), cur = nowYM(), bal = C.balances(accs, txs);
+    const flagged = accs.filter((a) => a.emergency), pool = flagged.length ? flagged : accs.filter((a) => a.type === 'kas' || a.type === 'bank' || a.type === 'ewallet');
+    const emergency = pool.reduce((s, a) => s + Math.max(0, bal[a.id] || 0), 0);
+    let avg = C.avgMonthly(txs, ymShift(cur, -1), 3); if (!avg.months) avg = C.avgMonthly(txs, cur, 1);
+    const debtPay = list('bill').filter((b) => b.kind === 'cicilan').reduce((s, b) => s + (b.amountEst || 0), 0);
+    const r = C.healthLevel({ mode: modeOf() || 'pekerja', netWorth: C.netWorth(accs, txs), avgIncome: avg.income, avgExpense: avg.expense, emergency, debtPay, hasData: avg.months > 0 });
+    return Object.assign(r, { flagged: flagged.length > 0, emergency, avg });
+  }
+  const LEVEL_DESC = (M) => [['Defisit aset', 'Utang lebih besar dari seluruh aset'], ['Boncos', 'Rata-rata pengeluaran lebih besar dari pemasukan'], ['Tipis', 'Dana darurat < ' + M[0] + ' bulan pengeluaran, atau cicilan > 30% pemasukan'], ['Ada bantalan', 'Dana darurat ≥ ' + M[0] + ' bulan pengeluaran'], ['Aman', 'Dana darurat ≥ ' + M[1] + ' bulan, menabung/investasi ≥ 10% pemasukan'], ['Bertumbuh', 'Dana darurat ≥ ' + M[2] + ' bulan, menabung/investasi ≥ 20% pemasukan']];
+  function healthCard() {
+    const h = healthInfo(), M = h.target, mode = modeOf();
+    const seg6 = '<div class="lv">' + [0, 1, 2, 3, 4, 5].map((i) => `<i class="${h.level != null && i <= h.level ? 'on l' + h.level : ''}"></i>`).join('') + '</div>';
+    const desc = LEVEL_DESC(M).map((d, i) => `<div class="kv"><span><b>${i}</b> · ${esc(d[0])}</span><span style="white-space:normal;text-align:right">${esc(d[1])}</span></div>`).join('');
+    let b = `<div class="card pad"><div class="s">Level kesehatan keuangan</div>`;
+    if (h.level == null) b += `<div class="big" style="font-size:1.2rem;font-weight:700">Belum cukup data</div>${seg6}<div class="s">Catat pemasukan & pengeluaran beberapa hari dulu.</div>`;
+    else b += `<div class="big" style="font-size:1.35rem;font-weight:800">Level ${h.level} · ${esc(h.name)}</div>${seg6}<div class="s">${esc(h.why)}</div>${h.level < 5 ? `<div class="s" style="margin-top:4px">➜ <b>Berikutnya:</b> ${esc(h.next)}</div>` : `<div class="s" style="margin-top:4px">✓ ${esc(h.next)}</div>`}<div class="kv" style="margin-top:8px"><span>Dana darurat</span><b>${String(h.efMonths).replace('.', ',')} bulan pengeluaran</b></div><div class="kv"><span>Cicilan / pemasukan</span><b>${pc(h.debtRatio)}</b></div><div class="kv"><span>Ditabung / pemasukan</span><b>${pc(h.saveRate)}</b></div>`;
+    b += `<details class="hlp" style="margin-top:8px"><summary>Cara menghitung & semua level</summary><div class="hb">${desc}<p class="note" style="margin:8px 0 0">Mode: <b>${esc((MODES.find((m) => m[0] === (mode || 'pekerja')) || [0, ''])[1])}</b>. Target dana darurat berbeda per mode (${M.join(' / ')} bulan). ${h.flagged ? 'Dana darurat = akun yang Anda tandai.' : 'Belum ada akun ditandai "dana darurat", jadi dihitung dari semua kas, bank, dan e-wallet. Tandai satu rekening agar lebih akurat.'} Rata-rata 3 bulan terakhir. Ini pedoman umum, bukan nasihat keuangan.${mode ? '' : ' <a href="#" data-a="profilEdit">Pilih mode di Profil</a> agar target sesuai.'}</p></div></details></div>`;
+    return b;
+  }
+  const goalSaved = (g, bal) => (g.accId ? Math.max(0, (bal || C.balances(list('acc'), list('tx')))[g.accId] || 0) : 0) + list('gc').filter((x) => x.goalId === g.id).reduce((s, x) => s + (x.amount || 0), 0);
+  function goalCard(g, bal) {
+    const saved = goalSaved(g, bal), p = C.goalProgress(g, saved, C.today()), acc = g.accId ? get('acc', g.accId) : null;
+    const badge = p.status === 'tercapai' ? '<span class="bd">Tercapai 🎉</span>' : p.status === 'terlambat' ? '<span class="bd late">Lewat tanggal</span>' : g.primary ? '<span class="bd">Utama</span>' : '<span class="bd" style="background:var(--line);color:var(--mute)">Sampingan</span>';
+    return `<div class="card pad"><div class="inl" style="justify-content:space-between;align-items:flex-start"><div><div class="t">${esc(g.name)}</div><div class="s">${g.date ? 'Target ' + fmtDate(g.date) : 'Tanpa tanggal'}${acc ? ' · 🔗 ' + esc(acc.name) : ''}</div></div>${badge}</div><div class="pb"><i style="width:${p.pct}%"></i></div><div class="inl" style="justify-content:space-between"><b>${pc(p.pct)}</b><span class="s">${rp(saved)} / ${rp(g.target)}</span></div>${p.status === 'tercapai' ? '' : `<div class="s" style="margin-top:6px">Sisa <b>${rp(p.left)}</b>${p.perMonth ? ' · perlu <b>' + rp(p.perMonth) + '</b>/bulan · ' + p.months + ' bulan lagi' : ''}</div>`}<div class="btns" style="margin-top:10px"><button class="btn sm" data-a="goalDep" data-id="${g.id}">+ Setor</button><button class="btn alt sm" data-a="goalEdit" data-id="${g.id}">Ubah</button></div></div>`;
+  }
+  const GOAL_TPL = {
+    pelajar: ['Laptop / HP baru', 'Dana darurat mini', 'Liburan', 'Biaya wisuda / KKN', 'Modal usaha kecil'],
+    pekerja: ['Dana darurat 6 bulan', 'Dana nikah / lamaran', 'DP rumah', 'Kendaraan', 'Liburan', 'Dana pendidikan lanjutan', 'Investasi awal'],
+    keluarga: ['Dana darurat keluarga', 'Pendidikan anak', 'Qurban', 'Renovasi rumah', 'Liburan keluarga', 'Dana pensiun', 'Ganti kendaraan'],
+  };
+  function goalForm(g, pre) {
+    g = g || {}; pre = pre || {};
+    const accs = [['', 'Tidak dikaitkan (setor manual)']].concat(accOpts());
+    openForm(g.id ? 'Ubah tujuan' : 'Tujuan tabungan baru', [
+      { k: 'name', label: 'Nama tujuan', req: true, list: GOAL_TPL[modeOf() || 'pekerja'] }, { k: 'target', label: 'Target (Rp)', type: 'amount', req: true },
+      { k: 'date', label: 'Tanggal target (opsional)', type: 'date' }, { k: 'accId', label: 'Hitung dari saldo akun (opsional, mis. rekening tabungan khusus)', type: 'select', opts: accs },
+      { k: 'primary', label: 'Tujuan utama', type: 'check' },
+    ], { name: g.name || pre.name || '', target: g.target || '', date: g.date || '', accId: g.accId || '', primary: !!g.primary }, (v) => {
+      const t = C.parseAmount(v.target); if (t == null || t <= 0) return 'Target harus bilangan bulat rupiah lebih dari 0.';
+      C.put(store, 'goal', { id: g.id, name: v.name, target: t, date: v.date, accId: v.accId, primary: v.primary }); commit();
+    }, g.id ? [{ label: 'Hapus tujuan', fn: () => { list('gc').filter((x) => x.goalId === g.id).forEach((x) => C.remove(store, x.id)); C.remove(store, g.id); commit(); } }] : null,
+    'Dua cara menghitung terkumpul: setor manual lewat tombol + Setor, atau kaitkan ke satu akun sehingga saldonya otomatis ikut. Keduanya bisa dipakai bersamaan.');
+  }
+  function goalTplMenu() { openMenu('Pilih tujuan', GOAL_TPL[modeOf() || 'pekerja'].map((n) => ({ label: n, fn: () => goalForm(null, { name: n }) }))); }
+  function goalDepForm(g) {
+    openForm('Setor ke: ' + g.name, [{ k: 'amount', label: 'Jumlah (Rp)', type: 'amount', req: true }, { k: 'out', label: 'Ini penarikan (mengurangi)', type: 'check' }, { k: 'date', label: 'Tanggal', type: 'date', req: true }], { date: C.today() }, (v) => {
+      const n = C.parseAmount(v.amount); if (n == null || n <= 0) return 'Jumlah harus bilangan bulat rupiah lebih dari 0.';
+      C.put(store, 'gc', { goalId: g.id, amount: v.out ? -n : n, date: v.date }); commit(); toast(v.out ? 'Penarikan tercatat' : 'Setoran tercatat ✓');
+    }, null, 'Setoran manual tidak memindahkan uang di akun. Untuk memindahkan uang sungguhan, catat Transfer antar akun lalu kaitkan tujuan ke akun tabungannya.');
+  }
+  const lastDay = (ym) => new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0).getDate();
+  function recapText(ym) {
+    const txs = list('tx'), rep = C.monthReport(txs, ym), top = C.topSlices(rep.byCat, 5), h = healthInfo(), pend = list('bill').filter((b) => b.paidYM !== ym);
+    let t = `📊 Rekap keuangan ${ymLabel(ym)}${ownerName() ? ' — ' + ownerName() : ''}\n\nMasuk: ${rp(rep.income)}\nKeluar: ${rp(rep.expense)}\nSisa: ${rp(rep.income - rep.expense)}\n`;
+    if (top.length) t += '\nPengeluaran terbesar:\n' + top.map((s, i) => `${i + 1}. ${s.name} ${rp(s.amount)} (${pc(s.pct)})`).join('\n') + '\n';
+    if (pend.length) t += '\nBelum dibayar bulan ini:\n' + pend.slice(0, 8).map((b) => `• ${b.name}${b.amountEst ? ' ' + rp(b.amountEst) : ''} (tgl ${b.dueDay})`).join('\n') + '\n';
+    if (h.level != null) t += `\nLevel kesehatan keuangan: ${h.level}/5 · ${h.name}\n`;
+    return t + '\n— dicatat dengan RUMAHKU-ONE';
+  }
+  const catIcon = (c) => { c = (c || '').toLowerCase(); return /makan|dapur|jajan/.test(c) ? '🍽️' : /transport|bensin/.test(c) ? '🚗' : /tagihan|listrik|kewajiban/.test(c) ? '🧾' : /cicil|utang/.test(c) ? '🏦' : /belanja/.test(c) ? '🛒' : /sehat|obat|bpjs/.test(c) ? '💊' : /hibur|nongkrong|kencan/.test(c) ? '🎉' : /sekolah|spp|kuliah|buku|pendidikan/.test(c) ? '🎓' : /asuransi/.test(c) ? '🛡️' : /rumah|kos/.test(c) ? '🏠' : /gaji|bonus|thr|uang saku|beasiswa|lembur|freelance|bisnis/.test(c) ? '💼' : /invest/.test(c) ? '📈' : /orang tua|hadiah|angpao/.test(c) ? '🎁' : '💸'; };
+
   function vMoney() {
     if (!ui.moneyMonth) ui.moneyMonth = nowYM();
-    const ym = ui.moneyMonth, accs = list('acc'), txs = list('tx');
-    const bal = C.balances(accs, txs), nw = C.netWorth(accs, txs), rep = C.monthReport(txs, ym), bud = C.budgetStatus(list('budget'), rep);
-    const accName = (id) => (accs.find((a) => a.id === id) || { name: '?' }).name;
-    let h = `<div class="card hero pad"><div class="s">Kekayaan bersih (semua akun)</div><div class="big">${rp(nw)}</div></div>`;
-    h += `<h2>Akun</h2><div class="card">${accs.length ? accs.map((a) => `<div class="row" data-a="accEdit" data-id="${a.id}">${ic('c2', a.type === 'bank' ? '🏦' : a.type === 'ewallet' ? '📱' : a.type === 'kartu' ? '💳' : a.type === 'invest' ? '📈' : '👛')}<div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${esc(a.type)}</div></div><div class="${sgn(bal[a.id] || 0)}"><b>${rp(bal[a.id] || 0)}</b></div></div>`).join('') : '<div class="empty">Belum ada akun. Buat satu (mis. Dompet, BCA).</div>'}</div><button class="btn alt sm" data-a="accAdd">+ Akun</button> <button class="btn alt sm" data-a="tpl" data-k="acc">✨ Template akun</button><p class="note">Membayar kartu kredit = <b>transfer</b> dari akun bank ke akun kartu, bukan pengeluaran.</p>`;
-    h += `<div class="inl" style="justify-content:space-between;align-items:center;margin-top:14px"><button class="btn alt sm" data-a="mPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="mNext" aria-label="Bulan berikutnya">›</button></div>`;
-    h += `<div class="card pad"><div class="row" style="border:0;padding:0"><div class="grow s">Pemasukan<div class="pos t">${rp(rep.income)}</div></div><div class="grow s">Pengeluaran<div class="neg t">${rp(rep.expense)}</div></div><div class="grow s">Selisih<div class="t ${sgn(rep.income - rep.expense)}">${rp(rep.income - rep.expense)}</div></div></div></div>`;
-    h += `<h2>Anggaran</h2><div class="card">${bud.length ? bud.map((b) => `<div class="row" data-a="budEdit" data-id="${b.id}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${esc(b.cat)}</span><span class="s">${rp(b.spent)} / ${rp(b.limit)} · ${b.pct}%</span></div><div class="bar"><i class="${b.level === 'ok' ? '' : b.level}" style="width:${Math.min(100, b.pct)}%"></i></div></div>`).join('') : '<div class="empty">Belum ada anggaran.</div>'}</div><button class="btn alt sm" data-a="budAdd">+ Anggaran</button> <button class="btn alt sm" data-a="tpl" data-k="budget">✨ Template anggaran</button>`;
-    const month = txs.filter((t) => t.date && t.date.slice(0, 7) === ym).sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
-    h += `<h2>Transaksi</h2><div class="card">${month.length ? month.map((t) => {
-      const lbl = t.kind === 'transfer' ? `${esc(accName(t.acc))} → ${esc(accName(t.to))}` : esc(t.cat || '') + ' · ' + esc(accName(t.acc));
-      const col = t.kind === 'income' ? 'pos' : t.kind === 'expense' ? 'neg' : '', sign = t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : '⇄ ';
-      return `<div class="row" ${t.void ? 'style="opacity:.5;text-decoration:line-through"' : ''}><div class="grow"><div class="t">${lbl}${t.void ? ' <span class="tag">void</span>' : ''}</div><div class="s">${fmtDate(t.date)}${t.note ? ' · ' + esc(t.note) : ''}</div></div><div class="${col}"><b>${sign}${rp(t.amount)}</b></div>${t.void ? '' : `<button class="link" data-a="txVoid" data-id="${t.id}" aria-label="Void transaksi">void</button>`}</div>`;
-    }).join('') : '<div class="empty">Belum ada transaksi bulan ini.</div>'}</div><button class="btn full" data-a="txAdd">+ Catat transaksi</button><p class="note">Transaksi tidak pernah dihapus: "void" membuatnya dianggap tidak ada, riwayatnya tetap tersimpan.</p>`;
+    if (!ui.moneyTab) ui.moneyTab = 'ringkas';
+    const ym = ui.moneyMonth, today = C.today(), accs = list('acc'), txs = list('tx');
+    const bal = C.balances(accs, txs), rep = C.monthReport(txs, ym), accName = (id) => (accs.find((a) => a.id === id) || { name: '?' }).name;
+    let h = seg('moneyTab', [['ringkas', 'Ringkasan'], ['trx', 'Transaksi'], ['stat', 'Statistik'], ['track', 'Tracker']], ui.moneyTab);
+    h += `<div class="inl" style="justify-content:space-between;align-items:center;margin:4px 0 8px"><button class="btn alt sm" data-a="mPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="mNext" aria-label="Bulan berikutnya">›</button></div>`;
+    const tab = ui.moneyTab;
+    if (tab === 'ringkas') {
+      const nw = C.netWorth(accs, txs), ad = C.assetsDebt(accs, txs), prevEnd = ymShift(nowYM(), -1) + '-' + String(lastDay(ymShift(nowYM(), -1))).padStart(2, '0'), prev = C.netWorthAt(accs, txs, prevEnd), diff = nw - prev;
+      h += `<div class="card hero pad"><div class="s">Kekayaan bersih · ${accs.length} rekening/akun</div><div class="big">${rp(nw)}</div><div class="inl" style="justify-content:space-between;margin-top:6px"><span class="s">Aset ${rp(ad.assets)}</span><span class="s">Utang ${rp(ad.debt)}</span></div><div class="pb" style="background:rgba(255,255,255,.25)"><i style="width:${ad.assets + ad.debt ? Math.round((ad.assets * 100) / (ad.assets + ad.debt)) : 100}%;background:#fff"></i></div>${accs.length && prev !== 0 ? `<div class="s" style="margin-top:6px">${diff >= 0 ? '▲ +' : '▼ −'}${rp(Math.abs(diff))} dibanding akhir bulan lalu</div>` : ''}</div>`;
+      h += healthCard();
+      const totAsset = Math.max(1, ad.assets);
+      h += `<h2>Rekening & sumber dana</h2><div class="card">${accs.length ? accs.map((a) => { const v = bal[a.id] || 0; return `<div class="row" data-a="accEdit" data-id="${a.id}">${ic('c2', a.type === 'bank' ? '🏦' : a.type === 'ewallet' ? '📱' : a.type === 'kartu' ? '💳' : a.type === 'invest' ? '📈' : '👛')}<div class="grow"><div class="t">${esc(a.name)}${a.emergency ? ' <span class="tag">🛟 darurat</span>' : ''}</div><div class="s">${esc(({ kas: 'Kas', bank: 'Bank', ewallet: 'E-wallet', kartu: 'Kartu kredit', invest: 'Investasi' })[a.type] || a.type)}</div>${v > 0 ? `<div class="pb" style="margin-top:4px;height:5px"><i style="width:${Math.min(100, Math.round((v * 100) / totAsset))}%"></i></div>` : ''}</div><b class="${v < 0 ? 'neg' : ''}">${rp(v)}</b></div>`; }).join('') : '<div class="empty">Belum ada rekening.<br>Tambahkan 3–4 rekening/e-wallet yang Anda pakai.</div>'}</div><div class="btns"><button class="btn" data-a="accAdd">+ Rekening</button><button class="btn alt" data-a="tpl" data-k="acc">✨ Dari template</button></div>`;
+      h += `<h2>Bulan ini</h2><div class="card pad"><div class="row" style="border:0;padding:0"><div class="grow s">Masuk<div class="t" style="color:var(--ok)">${rp(rep.income)}</div></div><div class="grow s">Keluar<div class="neg t">${rp(rep.expense)}</div></div><div class="grow s">Sisa<div class="t ${sgn(rep.income - rep.expense)}">${rp(rep.income - rep.expense)}</div></div></div></div>`;
+      const bills = list('bill').sort((a, b) => a.dueDay - b.dueDay), fixed = bills.filter((b) => b.kind === 'wajib' || b.kind === 'cicilan'), fsum = fixed.reduce((s, b) => s + (b.amountEst || 0), 0), unpaid = bills.filter((b) => b.paidYM !== ym);
+      h += `<h2>Kewajiban & tagihan</h2><div class="card pad"><div class="kv"><span>Kewajiban tetap / bulan</span><b>${rp(fsum)}</b></div><div class="kv"><span>Belum dibayar bulan ini</span><b>${unpaid.length} dari ${bills.length}</b></div>${unpaid.slice(0, 4).map((b) => `<div class="kv"><span>${esc(b.name)} <span class="s">tgl ${b.dueDay}</span></span><span>${b.amountEst ? rp(b.amountEst) : '—'}</span></div>`).join('')}<div style="margin-top:8px"><button class="btn alt full" data-a="nav" data-to="tagihan">Kelola tagihan & kewajiban ›</button></div></div>`;
+      const pts = []; for (let i = 5; i >= 0; i--) { const m = ymShift(nowYM(), -i), end = m === nowYM() ? today : m + '-' + String(lastDay(m)).padStart(2, '0'); pts.push({ label: MONTHS[+m.slice(5, 7) - 1].slice(0, 3), v: C.netWorthAt(accs, txs, end) }); }
+      if (accs.length) h += `<h2>Kekayaan 6 bulan terakhir</h2><div class="card pad">${nwBars(pts)}</div>`;
+      if (modeOf() === 'keluarga') {
+        const bs = list('budget'), tot = bs.reduce((s, b) => s + b.limit, 0), spent = bs.reduce((s, b) => s + (rep.byCat[b.cat] || 0), 0), pace = C.budgetPace(tot, spent, ym, today);
+        h += `<h2>Bendahara keluarga</h2><div class="card pad"><div class="kv"><span>Jatah belanja / hari</span><b>${tot ? rp(pace.perDay) : 'Atur anggaran dulu'}</b></div><div class="kv"><span>Tujuan tabungan</span><b>${list('goal').length} tujuan</b></div><div class="btns" style="margin-top:10px"><button class="btn" data-a="recapWa">📲 Kirim rekap ke WhatsApp</button><button class="btn alt" data-a="recapCopy">Salin rekap</button></div><p class="note">Rekap berisi masuk, keluar, pengeluaran terbesar, dan tagihan belum dibayar. Anda pilih sendiri penerimanya di WhatsApp.</p></div>`;
+      }
+      h += '<button class="btn full" data-a="txAdd">+ Catat transaksi</button>';
+    } else if (tab === 'trx') {
+      const kf = ui.trxKind || 'semua';
+      h += seg('trxKind', [['semua', 'Semua'], ['income', 'Masuk'], ['expense', 'Keluar']], kf);
+      const month = txs.filter((t) => t.date && t.date.slice(0, 7) === ym && (kf === 'semua' || t.kind === kf)).sort((a, b) => C.cmp(b.date, a.date) || C.cmp(b._u, a._u));
+      const days = []; month.forEach((t) => { let d = days.find((x) => x.date === t.date); if (!d) { d = { date: t.date, items: [] }; days.push(d); } d.items.push(t); });
+      h += days.length ? days.map((d) => { const net = d.items.reduce((s, t) => s + (t.void ? 0 : t.kind === 'income' ? t.amount : t.kind === 'expense' ? -t.amount : 0), 0); return `<div class="card"><div class="kv" style="font-weight:700"><span style="color:var(--ink)">${d.date === today ? 'Hari ini · ' : ''}${fmtDate(d.date)}</span><span class="${net < 0 ? 'neg' : ''}">${net < 0 ? '−' : net > 0 ? '+' : ''}${rp(Math.abs(net))}</span></div>${d.items.map((t) => {
+        const lbl = t.kind === 'transfer' ? `${esc(accName(t.acc))} → ${esc(accName(t.to))}` : esc(t.cat || ''), col = t.kind === 'income' ? 'pos' : t.kind === 'expense' ? 'neg' : '', sign = t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : '⇄ ';
+        return `<div class="row" data-a="txOpen" data-id="${t.id}" style="cursor:pointer;${t.void ? 'opacity:.5;text-decoration:line-through' : ''}">${ic('c2', t.kind === 'transfer' ? '⇄' : catIcon(t.cat))}<div class="grow"><div class="t">${lbl}${t.void ? ' <span class="tag">void</span>' : ''}${t.proof ? ' <span title="Ada bukti foto">📎</span>' : ''}</div><div class="s">${t.kind === 'transfer' ? '' : esc(accName(t.acc))}${t.note ? ' · ' + esc(t.note) : ''}</div></div><b class="${col}">${sign}${rp(t.amount)}</b></div>`;
+      }).join('')}</div>`; }).join('') : '<div class="card"><div class="empty">Belum ada transaksi.</div></div>';
+      h += '<button class="btn full" data-a="txAdd">+ Catat transaksi</button><p class="note">Ketuk transaksi untuk melihat/menambah foto bukti atau membatalkan (void). Transaksi tidak pernah dihapus: void membuatnya dianggap tidak ada, riwayat tetap tersimpan.</p>';
+    } else if (tab === 'stat') {
+      const isNow = ym === nowYM(), endDay = isNow ? +today.slice(8, 10) : lastDay(ym), cum = C.dailyCum(txs, ym, endDay), sav = rep.income > 0 ? Math.round(((rep.income - rep.expense) * 1000) / rep.income) / 10 : 0;
+      h += `<h2>Masuk vs keluar</h2><div class="card pad"><div class="s">Sisa periode ini</div><div class="big" style="font-size:1.7rem;font-weight:800">${rp(rep.income - rep.expense)}</div>${cumChart(cum, ym)}<div class="grid2" style="margin-top:10px"><div class="card pad" style="margin:0"><div class="s">Masuk</div><b>${rp(rep.income)}</b></div><div class="card pad" style="margin:0"><div class="s">Keluar</div><b>${rp(rep.expense)}</b></div><div class="card pad" style="margin:0"><div class="s">Sisa</div><b>${rp(rep.income - rep.expense)}</b></div><div class="card pad" style="margin:0"><div class="s">Ditabung</div><b>${pc(sav)}</b></div></div></div>`;
+      const si = C.topSlices(rep.bySrc, 8), se = C.topSlices(rep.byCat, 8);
+      h += `<h2>Pemasukan per sumber dana</h2><div class="card pad">${si.length ? donutSVG(si, cj(rep.income), 'total pemasukan', 'Diagram pemasukan per sumber') + legendList(si, 'pos') : '<div class="empty">Belum ada pemasukan bulan ini.</div>'}</div>`;
+      h += `<h2>Pengeluaran per kategori</h2><div class="card pad">${se.length ? donutSVG(se, cj(rep.expense), 'total pengeluaran', 'Diagram pengeluaran per kategori') + legendList(se, 'neg') : '<div class="empty">Belum ada pengeluaran bulan ini.</div>'}</div>`;
+      const withProof = txs.filter((t) => !t.void && t.kind === 'expense' && t.date && t.date.slice(0, 7) === ym), np = withProof.filter((t) => t.proof).length;
+      h += `<div class="card pad"><div class="kv"><span>Pengeluaran dgn bukti foto</span><b>${np} dari ${withProof.length}</b></div><div class="btns" style="margin-top:8px"><button class="btn" data-a="recapWa">📲 Kirim rekap ke WhatsApp</button><button class="btn alt" data-a="recapCopy">Salin rekap</button></div></div>`;
+    } else {
+      const bs = C.budgetStatus(list('budget'), rep), tot = bs.reduce((s, b) => s + b.limit, 0), spent = bs.reduce((s, b) => s + b.spent, 0), pace = C.budgetPace(tot, spent, ym, today);
+      h += '<h2>Budget tracker</h2>';
+      h += tot ? `<div class="card pad"><div class="inl" style="justify-content:space-between;align-items:baseline"><b style="font-size:1.4rem">${rp(spent)}</b><span class="bd ${pace.ahead ? 'late' : ''}">${pace.pct}% terpakai</span></div><div class="s">dari ${rp(tot)}</div><div class="pb"><i class="${pace.pct >= 100 ? 'over' : pace.ahead ? 'warn' : ''}" style="width:${Math.min(100, pace.pct)}%"></i><u class="pm" style="left:${pace.expectedPct}%"></u></div><div class="s" style="margin-top:6px">Sisa <b>${rp(Math.max(0, tot - spent))}</b>${ym === nowYM() ? ' untuk ' + pace.daysLeft + ' hari lagi · jatah ±<b>' + rp(pace.perDay) + '</b>/hari' : ''}</div><div class="s">┃ garis = batas wajar hari ini (${pace.expectedPct}%)</div></div>` : '';
+      h += bs.length ? bs.map((b) => { const p = C.budgetPace(b.limit, b.spent, ym, today); return `<div class="card pad" data-a="budEdit" data-id="${b.id}" style="cursor:pointer"><div class="inl" style="justify-content:space-between"><span class="t">${catIcon(b.cat)} ${esc(b.cat)}</span><span class="bd ${b.level === 'over' ? 'late' : b.level === 'warn' || p.ahead ? 'soon' : ''}">${b.level === 'over' ? 'Lewat batas' : b.level === 'warn' ? 'Waspada' : p.ahead ? 'Agak cepat' : 'Aman'}</span></div><div class="pb"><i class="${b.level === 'over' ? 'over' : b.level === 'warn' || p.ahead ? 'warn' : ''}" style="width:${Math.min(100, b.pct)}%"></i><u class="pm" style="left:${p.expectedPct}%"></u></div><div class="inl" style="justify-content:space-between"><span class="s">${b.pct}%${ym === nowYM() && b.limit > b.spent ? ' · jatah ±' + rp(p.perDay) + '/hari' : ''}</span><span class="s">${rp(b.spent)} / ${rp(b.limit)}</span></div></div>`; }).join('') : '<div class="card"><div class="empty">Belum ada anggaran.<br>Atur batas per kategori agar pengeluaran terkendali.</div></div>';
+      h += '<div class="btns"><button class="btn" data-a="budAdd">+ Anggaran</button><button class="btn alt" data-a="tpl" data-k="budget">✨ Dari template</button></div>';
+      const gs = list('goal').sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0) || C.cmp(a.date || '9999', b.date || '9999'));
+      h += '<h2>Goal tracker</h2>' + (gs.length ? gs.map((g) => goalCard(g, bal)).join('') : '<div class="card"><div class="empty">Belum ada tujuan.<br>Mulai dari dana darurat.</div></div>');
+      h += '<div class="btns"><button class="btn" data-a="goalAdd">+ Tujuan</button><button class="btn alt" data-a="goalTpl">✨ Dari template</button></div>';
+    }
     return { title: 'Uang', sub: '', html: h };
   }
 
@@ -962,7 +1166,7 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
       mrow('c4', '🚗', 'Kendaraan', 'Pajak, STNK, odometer, servis', 'kendaraan'), mrow('c1', '🛡️', 'Aset & garansi', 'Barang berharga dan masa garansi', 'aset'),
       mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
       mrow('c4', '📄', 'Dokumen penting', 'Lokasi simpan & masa berlaku', 'dokumen')])
-      + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
+      + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c4', '🗂️', 'Brankas identitas', 'Foto KTP, NPWP, KK siap dikirim', 'brankas'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
       + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
       + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
     return { title: 'Lainnya', sub: '', html: h + ABOUT_HTML };
@@ -1008,7 +1212,7 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
       let h = `<div class="card hero pad"><div class="s">Perkiraan tagihan rutin per bulan</div><div class="big">${rp(total)}</div><div class="s">${list('bill').length} tagihan</div></div>`;
       h += `<div class="card">${bs.length ? bs.map(({ b, due }) => {
         const n = C.daysBetween(t, due), lvl = C.urgency(n, 5);
-        return `<div class="row">${ic(lvl === 'late' ? 'c3' : 'c6', '🧾')}<div class="grow" data-a="billEdit" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">Tiap tgl ${b.dueDay}${b.amountEst ? ' · ±' + rp(b.amountEst) : ''}${b.lastPaid ? ' · terakhir ' + fmtDate(b.lastPaid) : ''}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${badge(due)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button></div></div>`;
+        return `<div class="row">${ic(lvl === 'late' ? 'c3' : 'c6', '🧾')}<div class="grow" data-a="billEdit" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">Tiap tgl ${b.dueDay}${b.amountEst ? ' · ' + (!b.kind || b.kind === 'tagihan' ? '±' : '') + rp(b.amountEst) : ''}${b.kind === 'wajib' ? ' · tetap' : b.kind === 'cicilan' ? ' · cicilan' : ''}${b.lastPaid ? ' · terakhir ' + fmtDate(b.lastPaid) : ''}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${badge(due)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button></div></div>`;
       }).join('') : '<div class="empty">Belum ada tagihan rutin.<br>Tambahkan listrik, internet, air, PBB, dan lainnya.</div>'}</div><button class="btn full" data-a="billAdd">+ Tagihan rutin</button><div style="height:10px"></div><button class="btn alt full" data-a="billTpl">✨ Tambah dari template</button><p class="note">"Bayar" menandai periode ini lunas dan, bila Anda pilih akun, langsung mencatat pengeluaran di tab Uang.</p>`;
       return { title: 'Tagihan rutin', sub: '', html: h, add: () => billForm() };
     },
@@ -1070,7 +1274,17 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
     berat() { return weightPage(); },
     profil() {
       const p = profile();
-      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Tanggal lahir</span><b>${p.birth ? fmtDate(p.birth) : '—'}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div class="kv"><span>Jenis kelamin · tinggi</span><b>${p.sex ? (p.sex === 'L' ? 'Laki-laki' : 'Perempuan') : '—'} · ${p.height ? esc(p.height) + ' cm' : '—'}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
+      return { title: 'Profil saya', sub: '', html: `<div class="card pad"><div class="kv"><span>Nama</span><b>${esc(p.name || '—')}</b></div><div class="kv"><span>Panggilan (sapaan)</span><b>${esc(p.nick || '—')}</b></div><div class="kv"><span>Tanggal lahir</span><b>${p.birth ? fmtDate(p.birth) : '—'}</b></div><div class="kv"><span>Sebutan untuk anak</span><b>${esc(p.callKid || '—')}</b></div><div class="kv"><span>Mode</span><b>${p.mode ? esc((MODES.find((m) => m[0] === p.mode) || [0, '—'])[1]) : '—'}</b></div><div class="kv"><span>Jenis kelamin · tinggi</span><b>${p.sex ? (p.sex === 'L' ? 'Laki-laki' : 'Perempuan') : '—'} · ${p.height ? esc(p.height) + ' cm' : '—'}</b></div><div style="margin-top:12px"><button class="btn full" data-a="profilEdit">${p.name ? 'Ubah profil' : 'Isi nama saya'}</button></div></div><p class="note">Sapaan di Beranda: "${esc(C.greeting(new Date().getHours()))}${ownerName() ? ', ' + esc(ownerName()) : ''}".</p>` };
+    },
+    brankas() {
+      const fs = list('pfile').filter((f) => f.personId && get('person', f.personId)), f0 = ui.vaultF || 'Semua';
+      const labels = ['Semua'].concat(FILE_LABELS.filter((l) => fs.some((f) => f.label === l)));
+      const shown = fs.filter((f) => f0 === 'Semua' || f.label === f0).sort((a, b) => C.cmp(a.label, b.label) || C.cmp(a._u, b._u));
+      let h = `<div class="card pad"><div class="t">🗂️ Brankas identitas</div><div class="s">Simpan foto KTP, NPWP, KK, SIM, dll. Saat ada yang minta, buka lalu ketuk <b>Kirim / bagikan</b>. Berkas hanya ada di HP ini dan tidak ikut sinkron Drive.</div></div>`;
+      h += `<div class="chips">${labels.map((l) => `<button class="chip ${f0 === l ? 'on' : ''}" data-a="set" data-k="vaultF" data-v="${esc(l)}">${esc(l)}</button>`).join('')}</div>`;
+      h += `<div class="card">${shown.length ? shown.map((f) => { const p = get('person', f.personId); return `<div class="row" data-a="fileOpen" data-id="${f.id}" style="cursor:pointer">${ic('c4', '🪪')}<div class="grow"><div class="t">${esc(f.label)}</div><div class="s">${esc(p.name)}${f.size ? ' · ' + Math.round(f.size / 1024) + ' KB' : ''}</div></div><span class="chev">›</span></div>`; }).join('') : '<div class="empty">Belum ada berkas.<br>Tambahkan foto KTP/NPWP milik Anda atau anggota keluarga.</div>'}</div>`;
+      h += '<button class="btn full" data-a="vaultAdd">+ Simpan foto berkas</button><p class="note">Tips: foto di tempat terang, seluruh sisi kartu terlihat. Foto otomatis dikecilkan agar hemat memori. Hapus berkas dari layar lihat bila sudah tidak perlu.</p>';
+      return { title: 'Brankas identitas', sub: fs.length + ' berkas', html: h };
     },
     keluarga() {
       const ps = list('person').sort((a, b) => C.cmp(a.name, b.name)), t = C.today();
@@ -1131,9 +1345,11 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
         + D('👪 Dipakai bersama / dites orang lain', '<p>Bagikan alamat aplikasi. <b>Setiap orang mendapat aplikasi kosong dan datanya terpisah di HP masing-masing</b>; tidak ada data yang bercampur dan tidak ada server pusat.</p><p>Untuk sinkron Drive, orang lain memakai Client ID mereka sendiri (langkah di atas), atau Anda menambahkan email mereka sebagai <b>Test users</b> di project Anda. Untuk berbagi data keluarga yang sama antar HP, pakai satu akun Google yang sama atau ekspor/impor JSON.</p><button class="btn alt" data-a="shareApp">Bagikan alamat aplikasi</button><p class="s">' + esc(url) + '</p>')
         + D('🧪 Data contoh', `<p class="s">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja. Yang belum Anda ubah bisa dihapus sekaligus; yang sudah Anda edit otomatis menjadi milik Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}`)
         + D('🔒 Privasi & keamanan', '<p>Data ada di perangkat Anda (dan folder privat Drive Anda bila terhubung). Tidak ada server pengembang. Nomor KTP/NPWP disimpan <b>belum terenkripsi</b>: pakai kunci layar HP yang kuat. Foto berkas hanya di perangkat itu. Backup rutin: <b>Sinkron &amp; backup → Ekspor JSON</b>.</p><p class="s">Aturan: uang = rupiah bulat; transaksi tidak dihapus, hanya di-void; transfer bukan pemasukan/pengeluaran.</p>')
+        + D('💰 Uang: rekening, sumber dana, bukti', '<p><b>Mode:</b> pilih di Profil saya (Pelajar / Pekerja / Berkeluarga). Kategori, tujuan, dan target dana darurat ikut menyesuaikan.</p><p><b>Rekening:</b> tab Ringkasan → + Rekening atau Dari template (BCA, Mandiri, SeaBank, GoPay, dll). Tandai satu rekening sebagai <i>dana darurat</i>.</p><p><b>Sumber dana & kategori:</b> saat mencatat, pilih dari daftar. Butuh yang belum ada? Pilih <b>➕ Tambah baru…</b> di paling bawah daftar, lalu ketik namanya.</p><p><b>Bukti:</b> saat mencatat ada kolom foto bukti/struk. Atau ketuk transaksi → Tambah foto bukti. Foto tersimpan di HP ini saja.</p><p><b>Kewajiban tetap</b> (asuransi, SPP, kas desa, arisan) dan <b>cicilan</b> ada di Lainnya → Tagihan rutin (pilih Jenis). Level kesehatan keuangan, grafik, budget, dan goal ada di halaman Uang.</p>')
+        + D('🗂️ Brankas identitas', '<p>Lainnya → Brankas identitas. Simpan foto KTP, NPWP, KK, SIM. Saat diminta, buka lalu ketuk <b>Kirim / bagikan</b>. Berkas tidak ikut sinkron Drive; pindah HP berarti foto perlu disimpan ulang.</p>')
         + D('⚖️ Berat badan & IMT', '<p>Isi jenis kelamin &amp; tinggi badan di <b>Profil saya</b>, lalu <b>Lainnya → Berat badan &amp; IMT → Catat</b>. Grafik dan saran muncul otomatis. Klasifikasi mengikuti Kemenkes RI dan saran olahraga mengikuti WHO. Hanya untuk dewasa; ini bukan diagnosis.</p>')
-        + D('ℹ️ Tentang aplikasi', '<p>RUMAHKU-ONE dibuat oleh <b>Illusix</b>. Gratis dan <b>dilarang diperjualbelikan</b>. Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a>.</p>', false)
-        + '<p class="note">RUMAHKU-ONE Lite v0.4 · oleh Illusix</p>' };
+        + D('ℹ️ Tentang aplikasi', '<p>RUMAHKU-ONE v' + APP_VERSION + ' dibuat oleh <b>Illusix</b>. Gratis dan <b>dilarang diperjualbelikan</b>. Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a>.</p>', false)
+        + '<p class="note">RUMAHKU-ONE Lite v' + APP_VERSION + ' · oleh Illusix</p>' };
     },
   };
 
@@ -1198,6 +1414,21 @@ const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="
     calSel(d) { ui.calSel = d.v; render(); }, evAdd() { eventForm(); }, evEdit(d) { eventForm(get('event', d.id), d.occ); },
     mPrev() { ui.moneyMonth = ymShift(ui.moneyMonth, -1); render(); }, mNext() { ui.moneyMonth = ymShift(ui.moneyMonth, 1); render(); },
     txAdd() { txForm(); }, accAdd() { accForm(); }, accEdit(d) { accForm(get('acc', d.id)); }, budAdd() { budgetForm(); }, budEdit(d) { budgetForm(get('budget', d.id)); },
+    txOpen(d) {
+      const t = get('tx', d.id); if (!t) return; const items = [];
+      if (t.proof) items.push({ label: '📎 Lihat / kirim bukti', fn: () => { const f = get('pfile', t.proof); if (f) viewFile(f); else toast('Bukti tidak ada di perangkat ini'); } });
+      if (!t.void) { items.push({ label: t.proof ? '📷 Ganti foto bukti' : '📷 Tambah foto bukti', fn: () => pickImage((f) => attachProof(t.id, f)) }); items.push({ label: 'Void transaksi (batalkan)', fn: () => A.txVoid({ id: t.id }) }); }
+      openMenu(rp(t.amount) + ' · ' + (t.cat || 'Transfer') + (t.note ? ' · ' + t.note : ''), items);
+    },
+    chartDay(d) { const el = document.getElementById('rd'); if (el) el.textContent = d.t; },
+    vaultAdd() {
+      const ps = list('person').sort((a, b) => C.cmp(a.name, b.name));
+      const items = ps.map((p) => ({ label: p.name + (p.rel ? ' (' + p.rel + ')' : ''), fn: () => A.fileAdd({ id: p.id }) })); items.push({ label: '➕ Anggota baru (mis. diri sendiri)', fn: () => personForm() });
+      openMenu('Berkas milik siapa?', items);
+    },
+    goalAdd() { goalForm(); }, goalTpl() { goalTplMenu(); }, goalEdit(d) { const g = get('goal', d.id); if (g) goalForm(g); }, goalDep(d) { const g = get('goal', d.id); if (g) goalDepForm(g); },
+    recapWa() { window.open('https://wa.me/?text=' + encodeURIComponent(recapText(ui.moneyMonth || nowYM())), '_blank', 'noopener'); },
+    async recapCopy() { try { await navigator.clipboard.writeText(recapText(ui.moneyMonth || nowYM())); toast('Rekap disalin'); } catch (e) { toast('Gagal menyalin'); } },
     txVoid(d) { const t = get('tx', d.id); if (!t) return; confirmBox('Void transaksi ' + rp(t.amount) + '? Dianggap tidak ada, riwayat tetap tersimpan.', () => { C.put(store, 'tx', { id: t.id, void: true, voidAt: C.today() }); commit(); }); },
     planAdd() { planForm(null, { group: ui.planGroup === 'semua' ? 'rumah' : ui.planGroup }); }, planTpl() { templateForm(); },
     planOpen(d) { go('planDetail', { id: d.id }); }, planEdit(d) { planForm(get('plan', d.id)); }, planDone(d) { const p = get('plan', d.id); if (p) planDoneForm(p); },

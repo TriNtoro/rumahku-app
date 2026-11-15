@@ -275,3 +275,43 @@ test('rentang berat normal, lingkar perut, deret & laju berat', () => {
   const pts = []; for (let i = 0; i < 8; i++) pts.push({ date: C.addDays('2026-11-01', i), kg: 90 - i * 0.1 }); // turun 0.1 kg/hari = 0.7 kg/minggu
   assert.equal(C.weeklyRate(pts, '2026-11-08', 14), -0.7); assert.equal(C.weeklyRate(pts.slice(0, 2), '2026-11-08', 14), null);
 });
+test('topSlices menggabungkan sisa & persen', () => {
+  const s = C.topSlices({ Gaji: 6500000, Bisnis: 1000000, Invest: 60000, A: 50000, B: 40000 }, 4);
+  assert.equal(s.length, 4); assert.equal(s[0].name, 'Gaji'); assert.equal(s[3].name, 'Lainnya (gabungan)'); assert.equal(s[3].amount, 90000);
+  assert.equal(Math.round(s.reduce((a, x) => a + x.pct, 0)), 100); assert.deepEqual(C.topSlices({}, 4), []);
+});
+test('monthReport.bySrc, dailyCum, netWorthAt, assetsDebt (transfer tak dihitung)', () => {
+  const accs = [{ id: 'a', opening: 1000 }, { id: 'k', opening: -500 }];
+  const txs = [{ kind: 'income', amount: 300, acc: 'a', cat: 'Gaji', date: '2026-11-02' }, { kind: 'expense', amount: 100, acc: 'a', cat: 'Makan', date: '2026-11-03' }, { kind: 'transfer', amount: 200, acc: 'a', to: 'k', date: '2026-11-03' }, { kind: 'expense', amount: 50, acc: 'a', cat: 'X', date: '2026-11-04', void: true }, { kind: 'income', amount: 10, acc: 'a', cat: 'Gaji', date: '2026-12-01' }];
+  const r = C.monthReport(txs, '2026-11'); assert.deepEqual(r.bySrc, { Gaji: 300 }); assert.equal(r.expense, 100);
+  const d = C.dailyCum(txs, '2026-11', 4); assert.deepEqual(d.inc, [0, 300, 300, 300]); assert.deepEqual(d.exp, [0, 0, 100, 100]);
+  assert.equal(C.netWorthAt(accs, txs, '2026-11-02'), 500 + 300); assert.equal(C.netWorthAt(accs, txs, '2026-11-30'), 500 + 300 - 100);
+  assert.deepEqual(C.assetsDebt(accs, txs), { assets: 1000 + 300 - 100 - 200 + 10, debt: 300 });
+});
+test('avgMonthly: hanya bulan berdata', () => {
+  const txs = [{ kind: 'income', amount: 600, acc: 'a', date: '2026-09-01' }, { kind: 'expense', amount: 300, acc: 'a', date: '2026-09-02' }, { kind: 'income', amount: 1000, acc: 'a', date: '2026-11-01' }, { kind: 'expense', amount: 500, acc: 'a', date: '2026-11-05' }];
+  assert.deepEqual(C.avgMonthly(txs, '2026-11', 3), { income: 800, expense: 400, months: 2 }); assert.equal(C.avgMonthly([], '2026-11', 3).months, 0);
+});
+test('healthLevel per mode', () => {
+  const b = { mode: 'pekerja', netWorth: 1, avgIncome: 10, avgExpense: 5, emergency: 0, debtPay: 0, hasData: true };
+  assert.equal(C.healthLevel({ ...b, hasData: false }).level, null);
+  assert.equal(C.healthLevel({ ...b, netWorth: -1 }).level, 0);
+  assert.equal(C.healthLevel({ ...b, avgExpense: 11 }).level, 1);
+  assert.equal(C.healthLevel({ ...b, emergency: 4 }).level, 2);            // < 1 bulan
+  assert.equal(C.healthLevel({ ...b, emergency: 10, debtPay: 4 }).level, 2); // cicilan > 30%
+  assert.equal(C.healthLevel({ ...b, emergency: 10, saveRate: 0 }).level, 3);  // 2 bulan (<3)
+  assert.equal(C.healthLevel({ ...b, emergency: 15 }).level, 4);           // 3 bulan, tabung 50%
+  assert.equal(C.healthLevel({ ...b, emergency: 30 }).level, 5);           // 6 bulan, tabung 50%
+  assert.equal(C.healthLevel({ ...b, avgExpense: 9, emergency: 54 }).level, 4); // tabung 10% <20%
+  assert.equal(C.healthLevel({ ...b, mode: 'keluarga', emergency: 15 }).level, 3); // 3 bln <6
+  assert.equal(C.healthLevel({ ...b, mode: 'pelajar', emergency: 15 }).level, 5);  // 3 bln >=3
+});
+test('goalProgress & budgetPace', () => {
+  const g = C.goalProgress({ target: 18000000, date: '2027-11-15' }, 10600000, '2026-11-15');
+  assert.equal(g.pct, 58.8); assert.equal(g.left, 7400000); assert.equal(g.months, 12); assert.equal(g.perMonth, 616667); assert.equal(g.status, 'jalan');
+  assert.equal(C.goalProgress({ target: 100 }, 100, '2026-11-15').status, 'tercapai');
+  assert.equal(C.goalProgress({ target: 100, date: '2026-11-01' }, 10, '2026-11-15').status, 'terlambat');
+  const p = C.budgetPace(2300000, 1120000, '2026-11', '2026-11-15');
+  assert.equal(p.dim, 30); assert.equal(p.expectedPct, 50); assert.equal(p.pct, 48); assert.equal(p.daysLeft, 16); assert.equal(p.perDay, 73750); assert.equal(p.ahead, false);
+  assert.equal(C.budgetPace(100, 90, '2026-11', '2026-11-05').ahead, true); assert.equal(C.budgetPace(100, 50, '2026-10', '2026-11-15').expectedPct, 100);
+});

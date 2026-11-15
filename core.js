@@ -125,10 +125,10 @@
   }
   // Laporan bulanan: transfer dikecualikan dari pemasukan/pengeluaran.
   function monthReport(txs, ym) {
-    const r = { income: 0, expense: 0, byCat: {} };
+    const r = { income: 0, expense: 0, byCat: {}, bySrc: {} };
     liveTx(txs).forEach((t) => {
       if (!t.date || t.date.slice(0, 7) !== ym) return;
-      if (t.kind === 'income') r.income += t.amount;
+      if (t.kind === 'income') { r.income += t.amount; const sc = t.cat || 'Lainnya'; r.bySrc[sc] = (r.bySrc[sc] || 0) + t.amount; }
       else if (t.kind === 'expense') {
         r.expense += t.amount;
         const c = t.cat || 'Lainnya';
@@ -143,6 +143,83 @@
       const pct = b.limit > 0 ? Math.floor((spent * 100) / b.limit) : 0;
       return { id: b.id, cat: b.cat, limit: b.limit, spent, pct, level: pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok' };
     });
+  }
+
+  // ---------- keuangan lanjutan (v0.5) ----------
+  // Urutkan menurut nominal; sisa di atas `max` irisan digabung ke "Lainnya (gabungan)".
+  function topSlices(map, max) {
+    const e = Object.keys(map).filter((k) => map[k] > 0).map((k) => ({ name: k, amount: map[k] })).sort((a, b) => b.amount - a.amount || (a.name < b.name ? -1 : 1));
+    const total = e.reduce((s, x) => s + x.amount, 0); if (!total) return [];
+    let out = e;
+    if (e.length > max) { const rest = e.slice(max - 1).reduce((s, x) => s + x.amount, 0); out = e.slice(0, max - 1).concat([{ name: 'Lainnya (gabungan)', amount: rest }]); }
+    return out.map((x) => Object.assign(x, { pct: Math.round((x.amount * 1000) / total) / 10 }));
+  }
+  // Akumulasi harian pemasukan/pengeluaran untuk bulan `ym`, sampai hari `endDay` (transfer dikecualikan).
+  function dailyCum(txs, ym, endDay) {
+    const inc = new Array(endDay).fill(0), exp = new Array(endDay).fill(0);
+    liveTx(txs).forEach((t) => {
+      if (!t.date || t.date.slice(0, 7) !== ym) return;
+      const d = +t.date.slice(8, 10); if (d < 1 || d > endDay) return;
+      if (t.kind === 'income') inc[d - 1] += t.amount; else if (t.kind === 'expense') exp[d - 1] += t.amount;
+    });
+    for (let i = 1; i < endDay; i++) { inc[i] += inc[i - 1]; exp[i] += exp[i - 1]; }
+    return { inc, exp };
+  }
+  // Kekayaan bersih per tanggal tertentu (transaksi bertanggal <= dateS; saldo awal selalu dihitung).
+  function netWorthAt(accounts, txs, dateS) { return netWorth(accounts, txs.filter((t) => t.date && t.date <= dateS)); }
+  function assetsDebt(accounts, txs) {
+    const b = balances(accounts, txs); let assets = 0, debt = 0;
+    accounts.forEach((a) => { const v = b[a.id] || 0; if (v >= 0) assets += v; else debt += -v; });
+    return { assets, debt };
+  }
+  // Rata-rata pemasukan & pengeluaran bulanan dari paling banyak n bulan terakhir (sampai ym) yang punya data.
+  function avgMonthly(txs, ym, n) {
+    let inc = 0, exp = 0, m = 0, cur = ym;
+    for (let i = 0; i < n; i++) {
+      const r = monthReport(txs, cur);
+      if (r.income > 0 || r.expense > 0) { inc += r.income; exp += r.expense; m++; }
+      const y = +cur.slice(0, 4), mo = +cur.slice(5, 7); cur = mo === 1 ? (y - 1) + '-12' : y + '-' + pad(mo - 1);
+    }
+    return m ? { income: Math.round(inc / m), expense: Math.round(exp / m), months: m } : { income: 0, expense: 0, months: 0 };
+  }
+  // Batas dana darurat (bulan pengeluaran) per mode: [bantalan, aman, bertumbuh]. Pedoman umum perencana keuangan.
+  const EF_MONTHS = { pelajar: [1, 2, 3], pekerja: [1, 3, 6], keluarga: [2, 6, 12] };
+  // Tangga kesehatan keuangan 0-5. Hanya angka; hasil bukan nasihat keuangan.
+  function healthLevel(i) {
+    const mode = EF_MONTHS[i.mode] ? i.mode : 'pekerja', M = EF_MONTHS[mode];
+    const names = ['Defisit aset', 'Boncos', 'Tipis', 'Ada bantalan', 'Aman', 'Bertumbuh'];
+    const efm = i.avgExpense > 0 ? i.emergency / i.avgExpense : (i.emergency > 0 ? 99 : 0);
+    const debtRatio = i.avgIncome > 0 ? (i.debtPay || 0) / i.avgIncome : ((i.debtPay || 0) > 0 ? 1 : 0);
+    const saveRate = i.avgIncome > 0 ? (i.avgIncome - i.avgExpense) / i.avgIncome : 0;
+    const out = (lv, why, next) => ({ level: lv, name: names[lv], efMonths: Math.round(efm * 10) / 10, debtRatio: Math.round(debtRatio * 1000) / 10, saveRate: Math.round(saveRate * 1000) / 10, why, next, target: M });
+    if (!i.hasData) return { level: null, name: 'Belum cukup data', why: 'Catat pemasukan & pengeluaran dulu.', next: '', target: M, efMonths: 0, debtRatio: 0, saveRate: 0 };
+    if (i.netWorth < 0) return out(0, 'Utang lebih besar dari seluruh aset.', 'Kurangi utang berbunga tinggi dulu.');
+    if (i.avgExpense > i.avgIncome) return out(1, 'Rata-rata pengeluaran lebih besar dari pemasukan.', 'Tekan pengeluaran atau tambah pemasukan agar bulanan tidak minus.');
+    if (efm < M[0] || debtRatio > 0.3) return out(2, efm < M[0] ? 'Dana darurat belum mencapai ' + M[0] + ' bulan pengeluaran.' : 'Cicilan lebih dari 30% pemasukan.', efm < M[0] ? 'Sisihkan sampai dana darurat ' + M[0] + ' bulan pengeluaran.' : 'Turunkan cicilan di bawah 30% pemasukan.');
+    if (efm < M[1] || saveRate < 0.1) return out(3, 'Dana darurat sudah ' + M[0] + '+ bulan.', efm < M[1] ? 'Naikkan dana darurat ke ' + M[1] + ' bulan.' : 'Sisihkan minimal 10% pemasukan tiap bulan.');
+    if (efm < M[2] || saveRate < 0.2) return out(4, 'Dana darurat ' + M[1] + '+ bulan dan menabung ≥ 10%.', efm < M[2] ? 'Naikkan dana darurat ke ' + M[2] + ' bulan.' : 'Naikkan tabungan/investasi ke 20% pemasukan.');
+    return out(5, 'Dana darurat ' + M[2] + '+ bulan dan menabung ≥ 20%.', 'Pertahankan, lalu arahkan kelebihan ke tujuan jangka panjang.');
+  }
+  // Kemajuan tujuan tabungan. goal: {target, date?}; saved: nominal terkumpul.
+  function goalProgress(goal, saved, todayS) {
+    const target = goal.target || 0, left = Math.max(0, target - saved);
+    const pct = target > 0 ? Math.min(100, Math.floor((saved * 1000) / target) / 10) : 0;
+    let months = null, perMonth = null, status = left === 0 && target > 0 ? 'tercapai' : 'jalan';
+    if (goal.date && left > 0) {
+      const a = parseD(todayS), b = parseD(goal.date);
+      months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + (b.getDate() >= a.getDate() ? 0 : -1);
+      if (goal.date <= todayS || months < 1) { months = 0; status = 'terlambat'; perMonth = left; }
+      else perMonth = Math.ceil(left / months);
+    }
+    return { pct, left, months, perMonth, status };
+  }
+  // Laju belanja: seberapa jauh bulan berjalan vs pemakaian anggaran.
+  function budgetPace(limit, spent, ym, todayS) {
+    const y = +ym.slice(0, 4), m = +ym.slice(5, 7), dim = daysInMonth(y, m - 1), cur = todayS.slice(0, 7);
+    const day = ym < cur ? dim : ym > cur ? 0 : +todayS.slice(8, 10);
+    const expectedPct = Math.round((day * 100) / dim), left = limit - spent, daysLeft = Math.max(1, dim - day + (ym === cur ? 1 : 0));
+    const pct = limit > 0 ? Math.floor((spent * 100) / limit) : 0;
+    return { dim, day, expectedPct, pct, left, daysLeft, perDay: left > 0 ? Math.floor(left / daysLeft) : 0, ahead: pct > expectedPct + 5 };
   }
 
   // ---------- kebiasaan ----------
@@ -456,6 +533,6 @@
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
     kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
-    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
   };
 });
