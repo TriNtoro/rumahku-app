@@ -196,15 +196,15 @@
       extras.push({ label: 'Hapus acara', fn: () => { C.remove(store, ev.id); commit(); } });
     }
     openForm(ev.id ? 'Ubah acara' : 'Acara baru', [
-      { k: 'title', label: 'Judul', req: true }, { k: 'date', label: 'Tanggal', type: 'date', req: true },
+      { k: 'title', label: 'Judul', req: true, list: ['Ulang tahun ', 'Bayar STNK', 'Bayar pajak kendaraan', 'Servis kendaraan', 'Kontrol dokter', 'Arisan', 'Rapat'] }, { k: 'date', label: 'Tanggal', type: 'date', req: true },
       { k: 'allDay', label: 'Sepanjang hari', type: 'check' }, { k: 'time', label: 'Jam mulai', type: 'time' },
-      { k: 'remind', label: 'Pengingat (acara ber-jam)', type: 'select', opts: REMIND_OPTS },
+      { k: 'remind', label: 'Pengingat', type: 'select', opts: EV_REMIND }, { k: 'remind2', label: 'Pengingat kedua (opsional)', type: 'select', opts: EV_REMIND },
       { k: 'repeat', label: 'Pengulangan', type: 'select', opts: REPEATS }, { k: 'until', label: 'Berulang sampai (opsional)', type: 'date' },
       { k: 'notes', label: 'Catatan', type: 'textarea' },
-    ], { title: ev.title, date: ev.date || ui.calSel || C.today(), allDay: ev.allDay !== false && !ev.time, time: ev.time, remind: ev.remind == null ? '10' : ev.remind, repeat: ev.repeat || 'none', until: ev.until, notes: ev.notes }, (v) => {
-      C.put(store, 'event', { id: ev.id, title: v.title, date: v.date, allDay: v.allDay, time: v.allDay ? '' : v.time, remind: v.remind, repeat: v.repeat, until: v.until || '', notes: v.notes, skip: ev.skip });
+    ], { title: ev.title, date: ev.date || ui.calSel || C.today(), allDay: ev.allDay !== false && !ev.time, time: ev.time, remind: ev.id ? (ev.remind == null ? (ev.time && !ev.allDay ? '10' : '') : ev.remind) : '1440', remind2: ev.remind2 || '', repeat: ev.repeat || 'none', until: ev.until, notes: ev.notes }, (v) => {
+      C.put(store, 'event', { id: ev.id, title: v.title, date: v.date, allDay: v.allDay, time: v.allDay ? '' : v.time, remind: v.remind, remind2: v.remind2, repeat: v.repeat, until: v.until || '', notes: v.notes, skip: ev.skip });
       commit();
-    }, extras);
+    }, extras, EV_NOTE);
   }
   async function attachProof(txId, file) {
     let fr = null;
@@ -780,10 +780,21 @@
     c.getContext('2d').drawImage(im, sx, sy, m, m, 0, 0, S, S); URL.revokeObjectURL(url);
     return c.toDataURL('image/jpeg', 0.7);
   }
-  function pickImage(cb) {
-    const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+  // cam=true -> langsung buka kamera belakang (Android/iOS); false -> galeri/berkas
+  function pickImage(cb, cam) {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; if (cam) i.setAttribute('capture', 'environment');
     i.onchange = () => { if (i.files && i.files[0]) cb(i.files[0]); };
     i.click();
+  }
+  // pilihan sumber foto: kamera langsung atau galeri
+  function photoSource(title, cb) {
+    openMenu(title, [{ label: '📷 Ambil foto (kamera)', fn: () => pickImage(cb, true) }, { label: '🖼️ Pilih dari galeri / berkas', fn: () => pickImage(cb, false) }]);
+  }
+  // simpan foto sebagai lampiran dokumen (blob di IndexedDB, metadata di rekaman pfile)
+  async function saveDocPhoto(doc, file) {
+    let blob; try { blob = await resizeBlob(file, 1600, 0.78); } catch (e) { return toast(e.message); }
+    const rec = C.put(store, 'pfile', { personId: '', docId: doc.id, label: doc.title, size: blob.size });
+    IDB.put(rec.id, blob).then(() => { commit(); toast('Foto tersimpan di HP ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan foto (penyimpanan penuh/dibatasi)'); });
   }
   async function viewFile(f) {
     let blob = null; try { blob = await IDB.get(f.id); } catch (e) { /* abaikan */ }
@@ -820,11 +831,13 @@
   function loadFired(t) { const f = readJSON('rk1.fired'); return new Set(f && f.d === t ? f.k : []); }
   function saveFired(t, set) { try { localStorage.setItem('rk1.fired', JSON.stringify({ d: t, k: Array.from(set).slice(-300) })); } catch (e) { /* abaikan */ } }
   const REMIND_OPTS = [['', 'Tanpa pengingat'], ['0', 'Tepat waktu'], ['10', '10 menit sebelumnya'], ['30', '30 menit sebelumnya'], ['60', '1 jam sebelumnya']];
+  const EV_REMIND = [['', 'Tanpa pengingat'], ['0', 'Tepat waktu'], ['10', '10 menit sebelumnya'], ['30', '30 menit sebelumnya'], ['60', '1 jam sebelumnya'], ['180', '3 jam sebelumnya'], ['1440', '1 hari sebelumnya'], ['4320', '3 hari sebelumnya'], ['10080', '1 minggu sebelumnya']];
+  const EV_NOTE = 'Pengingat gaya Google Calendar: pilih berapa lama sebelum acara (boleh dua). Acara tanpa jam dihitung dari pukul 08.00 hari H. Berbunyi saat aplikasi terbuka; agar bunyi saat HP terkunci, ekspor .ics di Lainnya → Notifikasi.';
   function icsItems() {
     const t = C.today(), out = [], RR = { daily: 'FREQ=DAILY', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY' };
     list('rt').filter((r) => !r.paused).forEach((r) => C.routineICS(r, C.addDays(t, 1)).forEach((x) => out.push(x)));
     list('task').filter((x) => !x.done && x.due && x.due >= t && x.time && x.remind !== '' && x.remind != null).forEach((x) => out.push({ uid: x.id, title: x.title, date: x.due, time: x.time, rrule: RR[x.repeat], alarmMin: +x.remind || 0 }));
-    list('event').filter((e) => e.time && !e.allDay).forEach((e) => out.push({ uid: e.id, title: e.title, date: e.date, time: e.time, rrule: RR[e.repeat], alarmMin: e.remind === '' ? 0 : e.remind == null ? 10 : +e.remind }));
+    list('event').forEach((e) => { const al = C.remindList(e), timed = !!(e.time && !e.allDay); if (!timed && !al.length) return; out.push({ uid: e.id, title: (C.isBirthdayTitle(e.title) ? '🎂 ' : '') + e.title, date: e.date, time: e.time, allDay: !timed, rrule: RR[e.repeat], alarms: al.length ? al : [0] }); });
     return out;
   }
   function waLink(phone, text) { const n = C.waNumber(phone); return 'https://wa.me/' + (n || '') + '?text=' + encodeURIComponent(text); }
@@ -857,10 +870,10 @@
     return out.sort((a, b) => C.cmp(a.date, b.date) || C.cmp(a.ev.time || '', b.ev.time || ''));
   }
   function evRow(o) {
-    return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
+    return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${C.isBirthdayTitle(o.ev.title) ? '🎂 ' : ''}${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
+const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
   const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
@@ -984,14 +997,14 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
     const nDays = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate(), next = ymShift(ym, 1) + '-01';
     const items = C.calendarItems(store, ym + '-01', next), by = {};
     items.forEach((x) => { (by[x.date] = by[x.date] || []).push(x); });
-    const dotCls = { event: '', task: 't', birthday: 'b' };
+    const dotCls = { event: '', task: 't', birthday: 'b' }, dk = (x) => (x.bday ? 'birthday' : x.kind);
     let cells = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((x) => `<div class="h">${x}</div>`).join('');
     for (let i = 0; i < lead; i++) cells += '<div class="day off"></div>';
     for (let d = 1; d <= nDays; d++) {
-      const ds = ym + '-' + String(d).padStart(2, '0'), kinds = Array.from(new Set((by[ds] || []).map((x) => (x.kind in dotCls ? x.kind : 'other')))).slice(0, 4);
+      const ds = ym + '-' + String(d).padStart(2, '0'), kinds = Array.from(new Set((by[ds] || []).map((x) => (dk(x) in dotCls ? dk(x) : 'other')))).slice(0, 4);
       cells += `<button class="day ${ds === t ? 'today' : ''} ${ds === ui.calSel ? 'sel' : ''}" data-a="calSel" data-v="${ds}" aria-label="${fmtDate(ds)}">${d}<div class="dots">${kinds.map((k) => `<i class="${k === 'other' ? 'o' : dotCls[k]}"></i>`).join('')}</div></button>`;
     }
-    let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="card pad"><div class="grid">${cells}</div></div><p class="note" style="margin:0 0 10px"><span class="lg"><i></i>acara</span> <span class="lg"><i class="t"></i>tugas</span> <span class="lg"><i class="b"></i>ulang tahun</span> <span class="lg"><i class="o"></i>tagihan, perawatan, pajak, garansi, dokumen</span></p>`;
+    let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="card pad"><div class="grid">${cells}</div></div><p class="note" style="margin:0 0 10px"><span class="lg"><i></i>acara</span> <span class="lg"><i class="t"></i>tugas</span> <span class="lg"><i class="b"></i>🎂 ulang tahun</span> <span class="lg"><i class="o"></i>tagihan, perawatan, pajak, garansi, dokumen</span></p>`;
     const sel = ui.calSel;
     const row = (x) => {
       if (x.kind === 'event') { const ev = get('event', x.id); return ev ? evRow({ ev, date: x.occ }) : ''; }
@@ -1001,10 +1014,18 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
     if (sel) {
       const rows = (by[sel] || []).map(row).join('');
       h += `<h2>${fmtDate(sel)}</h2><div class="card">${rows || '<div class="empty">Kosong.</div>'}</div><button class="btn full" data-a="evAdd">+ Acara di tanggal ini</button>`;
-    } else {
-      const up = items.filter((x) => x.date >= t).slice(0, 8);
-      h += `<h2>Bulan ini</h2><div class="card">${up.length ? up.map((x) => `<div class="row" data-a="calSel" data-v="${x.date}" style="cursor:pointer">${ic(x.kind === 'birthday' ? 'c3' : 'c6', x.icon)}<div class="grow"><div class="t">${esc(x.title)}</div><div class="s">${fmtDate(x.date)}${x.sub ? ' · ' + esc(x.sub) : ''}</div></div></div>`).join('') : '<div class="empty">Tidak ada agenda tersisa bulan ini. Ketuk tanggal untuk melihat detail.</div>'}</div><button class="btn full" data-a="evAdd">+ Acara baru</button>`;
     }
+    // Agenda sebulan penuh di bawah kalender: yang sudah lewat dicoret (gaya daftar tugas)
+    const nowD = new Date(), nowHM = C.fmtHM(nowD.getHours() * 60 + nowD.getMinutes());
+    const isPast = (x) => x.date < t || (x.date === t && ((x.time && x.time < nowHM) || x.paid));
+    const DS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+    const agRow = (x) => {
+      const past = isPast(x), act = x.kind === 'event' ? `data-a="evEdit" data-id="${x.id}" data-occ="${x.occ}"` : x.kind === 'task' ? 'data-a="nav" data-to="tugas"' : x.go ? `data-a="nav" data-to="${x.go}"` : `data-a="calSel" data-v="${x.date}"`;
+      const sub = [x.time || (x.kind === 'event' ? 'Seharian' : ''), x.sub && x.sub !== x.time && x.sub !== 'Seharian' ? x.sub : '', past ? 'sudah lewat' : ''].filter(Boolean).map(esc).join(' · ');
+      return `<div class="row ag ${past ? 'done' : ''} ${x.date === t ? 'tdy' : ''}" ${act} style="cursor:pointer"><div class="ag-d"><b>${+x.date.slice(8)}</b><span>${DS[C.parseD(x.date).getDay()]}</span></div><div class="grow"><div class="t">${x.icon} ${esc(x.title)}</div><div class="s">${sub}</div></div></div>`;
+    };
+    const left = items.filter((x) => !isPast(x)).length;
+    h += `<h2>Agenda ${ymLabel(ym)}</h2><div class="card">${items.length ? items.map(agRow).join('') : '<div class="empty">Belum ada agenda bulan ini. Tambahkan ulang tahun, STNK, kontrol dokter, dll.</div>'}</div><p class="note" style="margin:6px 0 10px">${items.length} agenda · ${left} belum lewat. Yang sudah lewat dicoret.</p><button class="btn full" data-a="evAdd">+ Acara baru</button>`;
     return { title: 'Kalender', sub: '', html: h };
   }
 
@@ -1241,7 +1262,7 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
     },
     dokumen() {
       const ds = list('doc').sort((a, b) => C.cmp(a.expiry || '9999', b.expiry || '9999'));
-      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<div class="card pad" data-a="nav" data-to="brankas" style="cursor:pointer"><div class="t">🪪 Brankas KTP, NPWP, KK, SIM</div><div class="s">Simpan foto scan identitas per orang, siap dikirim saat diminta. Ketuk di sini.</div></div><div class="card">${ds.length ? ds.map((d) => { const nf = list('pfile').filter((f) => f.docId === d.id).length; return `<div class="row"><div class="grow" data-a="docEdit" data-id="${d.id}" style="display:flex;gap:12px;align-items:center">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div><button class="btn alt sm" data-a="docFiles" data-id="${d.id}" aria-label="Foto scan ${esc(d.title)}">📷${nf ? ' ' + nf : ''}</button></div>`; }).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, sertifikat, polis, dll</button><p class="note">Ketuk 📷 di tiap dokumen untuk menyimpan foto/scan-nya (tersimpan hanya di HP ini). Jangan simpan nomor identitas sebagai teks di catatan (belum terenkripsi ujung-ke-ujung).</p>` };
+      return { title: 'Dokumen penting', sub: '', add: () => docForm(), html: `<button class="btn full" data-a="docQuick">📷 Foto cepat dengan kamera (KTP, NPWP, KK, SIM…)</button><div style="height:10px"></div><div class="card pad" data-a="nav" data-to="brankas" style="cursor:pointer"><div class="t">🪪 Brankas KTP, NPWP, KK, SIM</div><div class="s">Simpan foto scan identitas per orang, siap dikirim saat diminta. Ketuk di sini.</div></div><div class="card">${ds.length ? ds.map((d) => { const nf = list('pfile').filter((f) => f.docId === d.id).length; return `<div class="row"><div class="grow" data-a="docEdit" data-id="${d.id}" style="display:flex;gap:12px;align-items:center">${ic('c4', '📄')}<div class="grow"><div class="t">${esc(d.title)}</div><div class="s">${d.place ? 'Disimpan: ' + esc(d.place) : 'Lokasi belum diisi'}</div></div>${d.expiry ? badge(d.expiry) : ''}</div><button class="btn alt sm" data-a="docFiles" data-id="${d.id}" aria-label="Foto scan ${esc(d.title)}">📷${nf ? ' ' + nf : ''}</button></div>`; }).join('') : '<div class="empty">Belum ada dokumen. Catat lokasi simpan dan masa berlaku (sertifikat, polis, paspor, SIM).</div>'}</div><button class="btn full" data-a="docAdd">+ Dokumen</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="doc">✨ Tambah dari template: KK, sertifikat, polis, dll</button><p class="note">Ketuk 📷 di tiap dokumen untuk menyimpan foto/scan-nya (tersimpan hanya di HP ini). Jangan simpan nomor identitas sebagai teks di catatan (belum terenkripsi ujung-ke-ujung).</p>` };
     },
     tugas() {
       const t = C.today(), all = list('task'), f = ui.taskFilter;
@@ -1341,6 +1362,7 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
         D('🚀 Mulai cepat (5 menit)', '<ol><li><b>Lainnya → Profil saya</b>: isi nama, sapaan di Beranda jadi personal.</li><li><b>Rumah → Perawatan → Tambah dari template</b>: pilih servis AC, kuras toren, dst.</li><li><b>Tagihan rutin → Tambah dari template</b>, lalu ketuk tiap tagihan untuk mengisi nominal dan tanggal aslinya.</li><li><b>Kendaraan → Tambah</b>: plat, odometer, pajak, STNK.</li><li><b>Rutinitas harian</b>: template minum air, vitamin, dll.</li><li><b>Keluarga</b>: tambah anggota, lalu isi data identitas dan foto masing-masing.</li></ol><p class="s">Semua template bisa diubah. Tombol + di kanan bawah = tambah cepat.</p>', true)
         + D('📱 Pasang di layar utama HP', '<p><b>Android (Chrome):</b> buka alamat aplikasi, menu ⋮ → <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>. Ikon RUMAHKU muncul seperti aplikasi biasa dan bisa dibuka tanpa bilah alamat.</p><p><b>iPhone (Safari):</b> tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p><p class="s">Setelah dibuka sekali dengan internet, aplikasi tetap terbuka saat offline.</p>')
         + D('☁️ Hubungkan Google Drive (sekali saja)', `<p><b>Tidak wajib.</b> Tanpa Drive, data tetap tersimpan di HP Anda. Cukup rutin ketuk <b>Lainnya → Sinkron &amp; backup → Bagikan backup</b> dan simpan ke Files/Drive/WhatsApp. Langkah di bawah hanya bila ingin data otomatis sama di beberapa perangkat.</p><ol><li>Buka <b>console.cloud.google.com</b> dan masuk dengan akun Google Anda.</li><li>Buat <b>Project baru</b> (nama bebas, mis. "rumahku").</li><li><b>APIs &amp; Services → Library</b>, cari <b>Google Drive API</b>, klik <b>Enable</b>.</li><li><b>OAuth consent screen</b> (atau "Google Auth Platform"): pilih <b>External</b>, isi nama aplikasi dan email Anda. Di <b>Audience / Test users</b>, tambahkan email Google Anda sendiri.</li><li><b>Credentials → Create credentials → OAuth client ID</b>, jenis <b>Web application</b>.</li><li>Pada <b>Authorized JavaScript origins</b> isi persis: <code>${esc(origin)}</code> (tanpa garis miring di akhir dan tanpa nama folder).</li><li>Salin <b>Client ID</b> (berakhiran .apps.googleusercontent.com).</li><li>Di aplikasi: <b>Lainnya → Sinkron &amp; backup</b>, tempel Client ID, ketuk <b>Simpan ID</b>, lalu <b>Hubungkan &amp; sinkron</b>.</li></ol><p class="s">Layar "Google belum memverifikasi aplikasi ini" muncul untuk aplikasi pribadi: pilih <b>Lanjutan → Lanjutkan</b>. Aplikasi hanya meminta akses ke folder tersembunyi miliknya sendiri di Drive, bukan seluruh file Anda. Tampilan menu Google Cloud kadang berubah nama; ikuti padanan terdekat.</p>`)
+        + D('📅 Kalender & pengingat acara', '<p>Di bawah kalender ada <b>Agenda bulan ini</b>: semua acara, ulang tahun 🎂, tagihan, STNK/pajak, dst. urut tanggal. Yang <b>sudah lewat dicoret</b>.</p><p>Saat membuat acara, pilih <b>Pengingat</b> (tepat waktu, 10 menit, 30 menit, 1 jam, <b>3 jam</b>, <b>1 hari</b>, <b>3 hari</b>, 1 minggu sebelumnya) dan boleh menambah <b>pengingat kedua</b>. Acara tanpa jam dihitung dari pukul 08.00 hari H. Judul yang memuat "ulang tahun/ultah" otomatis diberi 🎂. Ulang tahun anggota keluarga diingatkan otomatis H-1 dan hari H pukul 08.00.</p><p class="note">Pengingat berbunyi selama aplikasi terbuka/berjalan di latar. Agar berbunyi saat HP terkunci, ekspor .ics di Lainnya → Notifikasi.</p>')
         + D('🔔 Pengingat & notifikasi', '<p>Ketuk <b>Lainnya → Notifikasi → Izinkan notifikasi</b>. Pengingat berbunyi selama aplikasi terbuka atau berjalan di latar.</p><p>Agar <b>pasti berbunyi saat HP terkunci</b>, ekspor ke Kalender HP (.ics) dari halaman Notifikasi, lalu buka berkasnya dan pilih Google Calendar.</p>')
         + D('👪 Dipakai bersama / dites orang lain', '<p>Bagikan alamat aplikasi. <b>Setiap orang mendapat aplikasi kosong dan datanya terpisah di HP masing-masing</b>; tidak ada data yang bercampur dan tidak ada server pusat.</p><p>Untuk sinkron Drive, orang lain memakai Client ID mereka sendiri (langkah di atas), atau Anda menambahkan email mereka sebagai <b>Test users</b> di project Anda. Untuk berbagi data keluarga yang sama antar HP, pakai satu akun Google yang sama atau ekspor/impor JSON.</p><button class="btn alt" data-a="shareApp">Bagikan alamat aplikasi</button><p class="s">' + esc(url) + '</p>')
         + D('🧪 Data contoh', `<p class="s">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja. Yang belum Anda ubah bisa dihapus sekaligus; yang sudah Anda edit otomatis menjadi milik Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}`)
@@ -1417,7 +1439,7 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
     txOpen(d) {
       const t = get('tx', d.id); if (!t) return; const items = [];
       if (t.proof) items.push({ label: '📎 Lihat / kirim bukti', fn: () => { const f = get('pfile', t.proof); if (f) viewFile(f); else toast('Bukti tidak ada di perangkat ini'); } });
-      if (!t.void) { items.push({ label: t.proof ? '📷 Ganti foto bukti' : '📷 Tambah foto bukti', fn: () => pickImage((f) => attachProof(t.id, f)) }); items.push({ label: 'Void transaksi (batalkan)', fn: () => A.txVoid({ id: t.id }) }); }
+      if (!t.void) { items.push({ label: t.proof ? '📷 Ganti foto bukti' : '📷 Tambah foto bukti', fn: () => photoSource('Foto bukti', (f) => attachProof(t.id, f)) }); items.push({ label: 'Void transaksi (batalkan)', fn: () => A.txVoid({ id: t.id }) }); }
       openMenu(rp(t.amount) + ' · ' + (t.cat || 'Transfer') + (t.note ? ' · ' + t.note : ''), items);
     },
     chartDay(d) { const el = document.getElementById('rd'); if (el) el.textContent = d.t; },
@@ -1429,12 +1451,18 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
     docFiles(d) {
       const doc = get('doc', d.id); if (!doc) return; const fs = list('pfile').filter((f) => f.docId === doc.id);
       const items = fs.map((f, i) => ({ label: '🖼️ Lihat / kirim foto ' + (i + 1) + (f.size ? ' (' + Math.round(f.size / 1024) + ' KB)' : ''), fn: () => viewFile(f) }));
-      items.push({ label: '📷 Tambah foto / scan', fn: () => pickImage(async (file) => {
-        let blob; try { blob = await resizeBlob(file, 1600, 0.78); } catch (e) { return toast(e.message); }
-        const rec = C.put(store, 'pfile', { personId: '', docId: doc.id, label: doc.title, size: blob.size });
-        IDB.put(rec.id, blob).then(() => { commit(); toast('Foto tersimpan di HP ini'); }).catch(() => { C.remove(store, rec.id); commit(); toast('Gagal menyimpan foto (penyimpanan penuh/dibatasi)'); });
-      }) });
+      items.push({ label: '📷 Ambil foto (kamera)', fn: () => pickImage((file) => saveDocPhoto(doc, file), true) });
+      items.push({ label: '🖼️ Tambah dari galeri / berkas', fn: () => pickImage((file) => saveDocPhoto(doc, file), false) });
       openMenu(doc.title, items);
+    },
+    // jalan pintas: foto dulu, lalu beri nama; dokumen dibuat otomatis bila belum ada
+    docQuick() {
+      pickImage((file) => {
+        openForm('Simpan foto sebagai…', [{ k: 'title', label: 'Nama dokumen', req: true, list: ['KTP', 'NPWP', 'Kartu keluarga', 'SIM', 'Paspor', 'BPJS', 'STNK', 'Ijazah'] }], { title: 'KTP' }, (v) => {
+          const doc = list('doc').find((x) => (x.title || '').toLowerCase() === v.title.trim().toLowerCase()) || C.put(store, 'doc', { title: v.title.trim(), expiry: '', place: '', notes: '' });
+          saveDocPhoto(doc, file);
+        }, null, 'Foto sudah diambil. Beri nama; jika dokumen dengan nama itu sudah ada, foto ditambahkan ke sana.');
+      }, true);
     },
     goalAdd() { goalForm(); }, goalTpl() { goalTplMenu(); }, goalEdit(d) { const g = get('goal', d.id); if (g) goalForm(g); }, goalDep(d) { const g = get('goal', d.id); if (g) goalDepForm(g); },
     recapWa() { window.open('https://wa.me/?text=' + encodeURIComponent(recapText(ui.moneyMonth || nowYM())), '_blank', 'noopener'); },
@@ -1487,14 +1515,14 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
     personKabar(d) { ui.afTab = 'kabar'; ui.afWho = d.id; go('afeksi'); },
     personPhoto(d) {
       const p = get('person', d.id); if (!p) return;
-      pickImage(async (f) => { try { const url = await avatarFrom(f); C.put(store, 'person', { id: p.id, photo: url }); commit(); toast('Foto profil diperbarui'); } catch (e) { toast(e.message); } });
+      photoSource('Foto profil', async (f) => { try { const url = await avatarFrom(f); C.put(store, 'person', { id: p.id, photo: url }); commit(); toast('Foto profil diperbarui'); } catch (e) { toast(e.message); } });
     },
     idAdd(d) { const p = get('person', d.id); if (p) idForm(p); }, idEdit(d) { const p = get('person', d.id); if (p) idForm(p, +d.i); },
     idShow(d) { ui.reveal[d.key] = !ui.reveal[d.key]; render(); },
     async idCopy(d) { const p = get('person', d.id), e = p && (p.ids || [])[+d.i]; if (!e) return; try { await navigator.clipboard.writeText(e.no); toast('Nomor disalin'); } catch (x) { toast('Salin manual dari layar'); } },
     fileAdd(d) {
       const p = get('person', d.id); if (!p) return;
-      pickImage(async (f) => {
+      photoSource('Foto berkas ' + (p.nick || p.name), async (f) => {
         let blob; try { blob = await resizeBlob(f, 1400, 0.75); } catch (e) { return toast(e.message); }
         openForm('Label berkas', [{ k: 'label', label: 'Jenis berkas', req: true, list: FILE_LABELS }], { label: 'KTP' }, (v) => {
           const rec = C.put(store, 'pfile', { personId: p.id, label: v.label, size: blob.size });
@@ -1665,11 +1693,11 @@ const APP_VERSION = '0.5.1', APP_DATE = '15 Nov 2026';
       if (x.done || x.due !== t || !x.time || x.remind === '' || x.remind == null) return;
       if (C.inWindow(nowMs, C.fireAt(t, x.time, x.remind))) fire('tk|' + x.id + '|' + t + '|' + x.time + '|' + x.remind, '✅ ' + x.title + (+x.remind > 0 ? ' — ' + x.remind + ' menit lagi' : ' — sekarang'));
     });
-    evOccurrences(t, C.addDays(t, 1)).forEach((o) => {
-      if (!o.ev.time || o.ev.allDay || o.ev.remind === '') return;
-      const rm = o.ev.remind == null ? 10 : +o.ev.remind;
-      if (C.inWindow(nowMs, C.fireAt(t, o.ev.time, rm))) fire('ev|' + o.ev.id + '|' + t + '|' + o.ev.time, '📅 ' + o.ev.title + (rm > 0 ? ' — ' + rm + ' menit lagi' : ' — sekarang'));
+    // acara: pengingat bisa 3 jam / 1-3 hari / 1 minggu sebelumnya, jadi cek kemunculan sampai 8 hari ke depan
+    evOccurrences(t, C.addDays(t, 8)).forEach((o) => {
+      C.eventDue(o.ev, o.date, nowMs).forEach((r) => fire(r.key, (C.isBirthdayTitle(o.ev.title) ? '🎂 ' : '📅 ') + o.ev.title + ' — ' + r.label));
     });
+    C.birthdayDue(C.calendarItems(store, t, C.addDays(t, 2)), t, nowMs).forEach((b) => fire(b.key, '🎂 ' + b.title + ' ' + (b.dd === 0 ? 'hari ini' : 'besok')));
     if (changed) saveFired(t, fired);
   }
   setInterval(tick, 30000);

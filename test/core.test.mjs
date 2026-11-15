@@ -315,3 +315,75 @@ test('goalProgress & budgetPace', () => {
   assert.equal(p.dim, 30); assert.equal(p.expectedPct, 50); assert.equal(p.pct, 48); assert.equal(p.daysLeft, 16); assert.equal(p.perDay, 73750); assert.equal(p.ahead, false);
   assert.equal(C.budgetPace(100, 90, '2026-11', '2026-11-05').ahead, true); assert.equal(C.budgetPace(100, 50, '2026-10', '2026-11-15').expectedPct, 100);
 });
+
+// ---------- pengingat acara & ulang tahun (v0.5.2) ----------
+const ms = (d, hm) => C.fireAt(d, hm, 0);
+test('isBirthdayTitle: mengenali ulang tahun / ultah', () => {
+  assert.equal(C.isBirthdayTitle('Ultah Ilham anak'), true);
+  assert.equal(C.isBirthdayTitle('Ulang Tahun Tri'), true);
+  assert.equal(C.isBirthdayTitle('Bayar STNK'), false);
+});
+test('remindList: bawaan lama, dua pengingat, tanpa duplikat', () => {
+  assert.deepEqual(C.remindList({ time: '09:00' }), [10]);          // data lama tanpa field remind
+  assert.deepEqual(C.remindList({ allDay: true }), []);              // seharian lama: tidak ada
+  assert.deepEqual(C.remindList({ remind: '', remind2: '' }), []);
+  assert.deepEqual(C.remindList({ remind: '4320', remind2: '1440' }), [4320, 1440]);
+  assert.deepEqual(C.remindList({ remind: '60', remind2: '60' }), [60]);
+});
+test('remindLabel', () => {
+  assert.equal(C.remindLabel(0, false), 'sekarang');
+  assert.equal(C.remindLabel(180), '3 jam lagi');
+  assert.equal(C.remindLabel(1440), 'besok');
+  assert.equal(C.remindLabel(4320), '3 hari lagi');
+  assert.equal(C.remindLabel(10080), '1 minggu lagi');
+});
+test('eventDue: 3 jam sebelum acara ber-jam', () => {
+  const ev = { id: 'e1', date: '2026-11-24', time: '14:00', remind: '180' };
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-24', '10:59')).length, 0);
+  const d = C.eventDue(ev, '2026-11-24', ms('2026-11-24', '11:05'));
+  assert.equal(d.length, 1); assert.equal(d[0].label, '3 jam lagi');
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-24', '12:00')).length, 0); // lewat jendela 30 menit
+});
+test('eventDue: seharian, 3 hari sebelumnya pukul 08.00, jendela 6 jam', () => {
+  const ev = { id: 'e2', date: '2026-11-24', allDay: true, remind: '4320' };
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-21', '07:59')).length, 0);
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-21', '12:00')).length, 1);
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-21', '14:30')).length, 0);
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-24', '09:00')).length, 0);  // pengingat 3 hari tak berbunyi saat H
+});
+test('eventDue: dua pengingat berbunyi terpisah dengan kunci berbeda', () => {
+  const ev = { id: 'e3', date: '2026-11-24', allDay: true, remind: '1440', remind2: '0' };
+  const a = C.eventDue(ev, '2026-11-24', ms('2026-11-23', '08:10'));
+  const b = C.eventDue(ev, '2026-11-24', ms('2026-11-24', '08:10'));
+  assert.equal(a.length, 1); assert.equal(b.length, 1); assert.notEqual(a[0].key, b[0].key);
+});
+test('eventDue: pengingat ber-jam tidak berbunyi setelah acara mulai', () => {
+  const ev = { id: 'e4', date: '2026-11-24', time: '14:00', remind: '10' };
+  assert.equal(C.eventDue(ev, '2026-11-24', ms('2026-11-24', '14:15')).length, 0);
+});
+test('calendarItems: acara "Ultah" diberi ikon kue', () => {
+  const st = C.emptyStore ? C.emptyStore() : { v: 1, rec: {} };
+  C.put(st, 'event', { title: 'Ultah Ilham anak', date: '2026-11-12', allDay: true });
+  C.put(st, 'event', { title: 'Bayar STNK', date: '2026-11-14', allDay: true });
+  const it = C.calendarItems(st, '2026-11-01', '2026-12-01');
+  assert.equal(it.find((x) => x.title.startsWith('Ultah')).icon, '🎂');
+  assert.equal(it.find((x) => x.title === 'Bayar STNK').icon, '📅');
+});
+test('birthdayDue: H-1 dan hari H memakai data anggota', () => {
+  const st = { v: 1, rec: {} };
+  C.put(st, 'person', { name: 'Ilham', birth: '2016-11-12' });
+  const items = C.calendarItems(st, '2026-11-11', '2026-11-13');
+  const h1 = C.birthdayDue(items, '2026-11-11', ms('2026-11-11', '09:00'));
+  assert.equal(h1.length, 1); assert.match(h1[0].text, /^besok/);
+  const h0 = C.birthdayDue(items, '2026-11-12', ms('2026-11-12', '09:00'));
+  assert.equal(h0.length, 1); assert.match(h0[0].text, /^hari ini/);
+  assert.equal(C.birthdayDue(items, '2026-11-11', ms('2026-11-11', '07:00')).length, 0);
+});
+test('buildICS: dua alarm & acara seharian', () => {
+  const ics = C.buildICS([{ uid: 'x', title: 'Ultah', date: '2026-11-24', allDay: true, alarms: [1440, 0] }], '2026-11-15T00:00:00Z');
+  assert.match(ics, /DTSTART;VALUE=DATE:20261124/); assert.match(ics, /DTEND;VALUE=DATE:20261125/);
+  assert.match(ics, /TRIGGER:-PT960M/);   // 08.00 - 24 jam = 16 jam sebelum 00.00 hari H
+  assert.match(ics, /TRIGGER:PT480M/);
+  const t = C.buildICS([{ uid: 'y', title: 'Rapat', date: '2026-11-24', time: '14:00', alarms: [180] }]);
+  assert.match(t, /TRIGGER:-PT180M/);
+});

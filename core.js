@@ -424,10 +424,57 @@
     return a >= 0 ? a : null;
   }
   // Semua hal bertanggal untuk kalender (rentang setengah terbuka [from,to)): acara, tugas, ulang tahun, tagihan, perawatan, pajak/STNK, garansi, dokumen, stok kedaluwarsa.
+  // ---------- pengingat acara (gaya Google Calendar: boleh 2 pengingat, dalam menit sebelum jam mulai) ----------
+  const BDAY_RE = /ulang\s*tahun|ultah|birthday|\bhbd\b|\bb'?day\b/i;
+  const isBirthdayTitle = (t) => BDAY_RE.test(String(t || ''));
+  // Acara seharian tidak punya jam: pengingat dihitung dari jam 08.00 pada hari H.
+  const ALLDAY_REF = '08:00';
+  // remind lama: undefined = 10 menit (hanya acara ber-jam), '' = tanpa. remind2: kosong = tidak ada.
+  function remindList(ev) {
+    const timed = !!(ev.time && !ev.allDay), out = [];
+    const r1 = ev.remind;
+    if (r1 == null) { if (timed) out.push(10); } else if (r1 !== '' && !isNaN(+r1)) out.push(+r1);
+    if (ev.remind2 != null && ev.remind2 !== '' && !isNaN(+ev.remind2)) out.push(+ev.remind2);
+    return out.filter((m, i, a) => m >= 0 && a.indexOf(m) === i);
+  }
+  function remindLabel(min, allDay) {
+    min = +min;
+    if (min === 0) return allDay ? 'hari ini' : 'sekarang';
+    if (min < 60) return min + ' menit lagi';
+    if (min < 1440) return (min / 60) + ' jam lagi';
+    if (min === 1440) return 'besok';
+    if (min % 10080 === 0) return (min / 10080) + ' minggu lagi';
+    return Math.round(min / 1440) + ' hari lagi';
+  }
+  // Pengingat acara yang jatuh tempo SEKARANG untuk satu kemunculan (dateS).
+  // Jendela: 30 menit untuk pengingat menit/jam; 6 jam untuk pengingat berbasis hari (HP baru dibuka siang hari tetap dapat).
+  function eventDue(ev, dateS, nowMs) {
+    const timed = !!(ev.time && !ev.allDay), ref = timed ? ev.time : ALLDAY_REF, out = [];
+    const startMs = fireAt(dateS, ref, 0), endMs = fireAt(dateS, '23:59', 0);
+    remindList(ev).forEach((m) => {
+      const at = fireAt(dateS, ref, m); if (at == null) return;
+      const grace = m >= 1440 ? 360 : 30;
+      if (!inWindow(nowMs, at, grace)) return;
+      if (m > 0 && nowMs > (timed ? startMs : endMs)) return;
+      out.push({ min: m, key: 'ev|' + ev.id + '|' + dateS + '|' + ref + '|' + m, label: remindLabel(m, !timed) });
+    });
+    return out;
+  }
+  // Ulang tahun anggota keluarga: otomatis diingatkan H-1 dan hari H pukul 08.00 (jendela 12 jam).
+  function birthdayDue(items, todayS, nowMs) {
+    const out = [];
+    items.filter((x) => x.kind === 'birthday' && !x.id).forEach((x) => {
+      const dd = x.date === todayS ? 0 : x.date === addDays(todayS, 1) ? 1 : -1; if (dd < 0) return;
+      const at = fireAt(todayS, ALLDAY_REF, 0);
+      if (inWindow(nowMs, at, 720)) out.push({ key: 'bd|' + x.title + '|' + x.date + '|' + dd, text: (dd === 0 ? 'hari ini' : 'besok') + ' — ' + x.title, title: x.title, dd });
+    });
+    return out;
+  }
+
   function calendarItems(store, from, to) {
     const out = [], L = (t) => list(store, t);
     const push = (date, kind, icon, title, sub, go, extra) => { if (date >= from && date < to) out.push(Object.assign({ date, kind, icon, title, sub: sub || '', go: go || '' }, extra || {})); };
-    L('event').forEach((ev) => expandEvent(ev, from, to).forEach((d) => push(d, 'event', '📅', ev.title, ev.time && !ev.allDay ? ev.time : 'Seharian', '', { id: ev.id, occ: d, time: ev.allDay ? '' : ev.time })));
+    L('event').forEach((ev) => expandEvent(ev, from, to).forEach((d) => push(d, 'event', isBirthdayTitle(ev.title) ? '🎂' : '📅', ev.title, ev.time && !ev.allDay ? ev.time : 'Seharian', '', { id: ev.id, occ: d, time: ev.allDay ? '' : ev.time, bday: isBirthdayTitle(ev.title) })));
     L('task').filter((t) => !t.done && t.due).forEach((t) => push(t.due, 'task', '✅', t.title, t.time || '', 'tugas', { id: t.id, time: t.time }));
     const pr = store.rec.profile && !store.rec.profile._d ? store.rec.profile : null;
     const people = L('person').map((p) => ({ name: p.nick || p.name, birth: p.birth })).concat(pr && pr.birth ? [{ name: pr.nick || pr.name || 'Saya', birth: pr.birth }] : []).filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.birth || ''));
@@ -510,13 +557,26 @@
     const stamp = String(nowISO || new Date().toISOString()).replace(/[-:]/g, '').replace(/\.\d+/, '');
     const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//RUMAHKU-ONE Lite//ID', 'CALSCALE:GREGORIAN'];
     items.forEach((it) => {
-      const st = toMin(it.time); if (st == null || !it.date) return;
-      const d = it.date.replace(/-/g, ''), en = Math.min(st + 5, 23 * 60 + 59);
-      L.push('BEGIN:VEVENT', 'UID:' + it.uid + '@rumahku', 'DTSTAMP:' + stamp, 'DTSTART:' + d + 'T' + fmtHM(st).replace(':', '') + '00', 'DTEND:' + d + 'T' + fmtHM(en).replace(':', '') + '00');
+      if (!it.date) return;
+      const alarms = (it.alarms && it.alarms.length ? it.alarms : [it.alarmMin]).map((m) => +m || 0);
+      const d = it.date.replace(/-/g, '');
+      L.push('BEGIN:VEVENT', 'UID:' + it.uid + '@rumahku', 'DTSTAMP:' + stamp);
+      let ref;
+      if (it.allDay) { L.push('DTSTART;VALUE=DATE:' + d, 'DTEND;VALUE=DATE:' + addDays(it.date, 1).replace(/-/g, '')); ref = toMin(ALLDAY_REF); }
+      else {
+        const st = toMin(it.time); if (st == null) { L.pop(); L.pop(); L.pop(); return; }
+        const en = Math.min(st + 5, 23 * 60 + 59);
+        L.push('DTSTART:' + d + 'T' + fmtHM(st).replace(':', '') + '00', 'DTEND:' + d + 'T' + fmtHM(en).replace(':', '') + '00'); ref = 0;
+      }
       if (it.rrule) L.push('RRULE:' + it.rrule);
       L.push('SUMMARY:' + icsEsc(it.title));
       if (it.desc) L.push('DESCRIPTION:' + icsEsc(it.desc));
-      L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(it.title), 'TRIGGER:-PT' + (+it.alarmMin || 0) + 'M', 'END:VALARM', 'END:VEVENT');
+      alarms.forEach((m) => {
+        // semua-hari: DTSTART = 00.00, pengingat dihitung dari 08.00 -> offset = 480 - m menit dari awal hari
+        const off = it.allDay ? ref - m : -m;
+        L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(it.title), 'TRIGGER:' + (it.allDay ? (off < 0 ? '-' : '') : '-') + 'PT' + Math.abs(off) + 'M', 'END:VALARM');
+      });
+      L.push('END:VEVENT');
     });
     L.push('END:VCALENDAR');
     return L.map(icsFold).join('\r\n') + '\r\n';
@@ -533,6 +593,6 @@
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
     kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
-    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, isBirthdayTitle, remindList, remindLabel, eventDue, birthdayDue, ALLDAY_REF, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
   };
 });
