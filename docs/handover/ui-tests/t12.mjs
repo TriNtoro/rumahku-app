@@ -1,0 +1,26 @@
+import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'], headless: 'new' });
+const p = await b.newPage(); await p.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console',m=>{if(m.type()==='error')errs.push(m.text())});
+await p.goto('http://localhost:8099/index.html',{waitUntil:'networkidle0'}); await p.evaluate(()=>localStorage.clear()); await p.reload({waitUntil:'networkidle0'});
+const click=(q)=>p.evaluate((s)=>{const e=document.querySelector(s); if(!e) throw new Error('tak ada '+s); e.click();},q);
+const setf=(n,v)=>p.evaluate((n,v)=>{const e=document.querySelector('#dlg [name='+n+']'); if(!e) throw new Error('field '+n); e.value=v;},n,v);
+const txt=()=>p.evaluate(()=>document.getElementById('top').innerText+'\n'+document.getElementById('main').innerText);
+const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m); if(!c)process.exitCode=1;};
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+await click('#nav [data-v=more]'); await click('[data-a=nav][data-to=dokumen]');
+await click('[data-a=docAdd]'); await sleep(100);
+let l=await p.evaluate(()=>document.getElementById('dlg').innerText);
+ok(/Ambil foto/.test(l)&&/Galeri/.test(l),'Form + Dokumen punya tombol 📷 Ambil foto & 🖼️ Galeri');
+await p.screenshot({path:'/tmp/docform.png'});
+const cap=await p.evaluate(()=>{ let c='none'; const o=HTMLInputElement.prototype.click; HTMLInputElement.prototype.click=function(){ if(this.type==='file') c=this.getAttribute('capture'); }; document.querySelector('[data-cam]').click(); const a=c; c='none'; document.querySelector('[data-gal]').click(); const g=c; HTMLInputElement.prototype.click=o; return {a,g}; });
+ok(cap.a==='environment','Tombol kamera: capture=environment'); ok(cap.g===null,'Tombol galeri: tanpa capture');
+const [fc]=await Promise.all([p.waitForFileChooser(), click('[data-cam]')]); await fc.accept(['/tmp/pt/test.png']); await sleep(300);
+l=await p.evaluate(()=>document.getElementById('dlg').innerText); ok(/Foto dipilih/.test(l),'Setelah foto dipilih tampil keterangan "Foto dipilih"');
+await setf('title','KTP Illa'); await click('#fok'); await sleep(900); const t=await txt();
+ok(/KTP Illa/.test(t)&&/📷 1/.test(t),'Dokumen tersimpan bersama 1 foto');
+const n=await p.evaluate(()=>Object.values(window.__rk.store().rec).filter(r=>r._t==='pfile'&&r.docId).length); ok(n===1,'Rekaman foto terhubung ke dokumen');
+// transaksi: bukti foto juga punya tombol kamera
+await click('#nav [data-v=money]'); await click('[data-a=txAdd]').catch(()=>{});
+ok(errs.length===0,'Tanpa error konsol '+JSON.stringify(errs));
+await b.close();

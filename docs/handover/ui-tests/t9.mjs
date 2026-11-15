@@ -26,7 +26,7 @@ await tab('more'); await nav('keluarga'); await p.evaluate(()=>document.querySel
 await tab('more'); await nav('brankas'); t=await txt(); ok(/Brankas identitas/i.test(t),'Halaman brankas');
 await click('[data-a=vaultAdd]'); m=await p.evaluate(()=>document.querySelector('#dlg').innerText); ok(/Anggota baru/.test(m),'Brankas menawarkan anggota baru bila kosong');
 await p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/Anggota baru/.test(x.textContent)).click()); await setf('name','Illa'); await click('#fok');
-await click('[data-a=vaultAdd]'); const [fc]=await Promise.all([p.waitForFileChooser(), p.evaluate(()=>document.querySelector('#dlg .menu button[data-i="0"]').click())]); await fc.accept(['/tmp/pt/test.png']); await sleep(600);
+await click('[data-a=vaultAdd]'); await p.evaluate(()=>document.querySelector('#dlg .menu button[data-i="0"]').click()); await sleep(150); const [fc]=await Promise.all([p.waitForFileChooser(), p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/galeri/.test(x.textContent)).click())]); await fc.accept(['/tmp/pt/test.png']); await sleep(600);
 await setf('label','KTP'); await click('#fok'); await sleep(600); t=await txt(); ok(/KTP/.test(t)&&/Illa/.test(t),'KTP tersimpan di brankas');
 await p.screenshot({path:'/tmp/brankas.png'});
 console.log('ERRS',errs); await b.close();

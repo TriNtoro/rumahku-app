@@ -8,7 +8,7 @@ const setf=(n,v)=>p.evaluate((n,v)=>{const e=document.querySelector('#dlg [name=
 const txt=()=>p.evaluate(()=>document.getElementById('top').innerText+'\n'+document.getElementById('main').innerText);
 const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m); if(!c)process.exitCode=1;};
 const tab=(v)=>click(`#nav [data-v=${v}]`); const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-let t=await txt(); ok(/v0\.5\.2/.test(t),'Versi v0.5.2 terlihat di Beranda');
+let t=await txt(); ok(/v0\.5\.4/.test(t),'Versi v0.5.2 terlihat di Beranda');
 await tab('cal');
 const add=async(title,date,extra={})=>{ await click('[data-a=evAdd]'); await setf('title',title); await setf('date',date); for(const k in extra) await setf(k,extra[k]); await click('#fok'); await sleep(100); };
 // form: opsi pengingat

@@ -12,7 +12,7 @@
   const GROUPS = { rumah: ['Rumah', '🏠', 'c2'], kendaraan: ['Kendaraan', '🚗', 'c4'], elektronik: ['Elektronik', '🔌', 'c6'] };
   const ASSET_EMOJI = { Elektronik: '🔌', Perabot: '🛋️', Bangunan: '🏗️', Lainnya: '📦' };
   const TEMPLATES = [
-    { g: 'rumah', name: 'Servis AC', every: 3, unit: 'month' }, { g: 'rumah', name: 'Kuras toren/tandon air', every: 6, unit: 'month' },
+    { g: 'rumah', name: 'Servis AC rumah (cuci indoor & outdoor)', every: 3, unit: 'month' }, { g: 'kendaraan', name: 'Servis AC mobil (cek freon & evaporator)', every: 12, unit: 'month' }, { g: 'kendaraan', name: 'Ganti filter kabin AC mobil', every: 12, unit: 'month' }, { g: 'rumah', name: 'Kuras toren/tandon air', every: 6, unit: 'month' },
     { g: 'rumah', name: 'Bersihkan talang & cek atap', every: 6, unit: 'month' }, { g: 'rumah', name: 'Cek instalasi listrik & MCB', every: 12, unit: 'month' },
     { g: 'rumah', name: 'Semprot anti rayap/hama', every: 12, unit: 'month' }, { g: 'rumah', name: 'Ganti filter air', every: 3, unit: 'month' },
     { g: 'rumah', name: 'Kuras septic tank', every: 36, unit: 'month' }, { g: 'rumah', name: 'Cek tabung pemadam & detektor asap', every: 12, unit: 'month' },
@@ -25,9 +25,9 @@
   ];
   const VEH_PLANS = {
     motor: [{ name: 'Ganti oli mesin', every: 2, unit: 'month', kmEvery: 2500 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Cek tekanan & kondisi ban', every: 1, unit: 'month', kmEvery: 0 }, { name: 'Cek rem & kampas', every: 6, unit: 'month', kmEvery: 8000 }, { name: 'Ganti busi & filter udara', every: 12, unit: 'month', kmEvery: 10000 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 }],
-    mobil: [{ name: 'Ganti oli mesin', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Rotasi & cek ban', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Cek rem & minyak rem', every: 12, unit: 'month', kmEvery: 20000 }, { name: 'Ganti filter udara & filter AC', every: 12, unit: 'month', kmEvery: 20000 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti air radiator / coolant', every: 24, unit: 'month', kmEvery: 0 }],
+    mobil: [{ name: 'Ganti oli mesin', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Servis berkala', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Rotasi & cek ban', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Cek rem & minyak rem', every: 12, unit: 'month', kmEvery: 20000 }, { name: 'Ganti filter udara & filter AC', every: 12, unit: 'month', kmEvery: 20000 }, { name: 'Servis AC mobil (cek freon & evaporator)', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Cek aki', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti air radiator / coolant', every: 24, unit: 'month', kmEvery: 0 }],
     motor_ev: [{ name: 'Cek kondisi baterai & charger', every: 6, unit: 'month', kmEvery: 0 }, { name: 'Servis berkala (ikuti buku servis)', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Cek rem & kampas', every: 6, unit: 'month', kmEvery: 5000 }, { name: 'Cek tekanan & kondisi ban', every: 1, unit: 'month', kmEvery: 0 }, { name: 'Cek kelistrikan & pembaruan software', every: 12, unit: 'month', kmEvery: 0 }],
-    mobil_ev: [{ name: 'Cek kesehatan baterai & sistem pengisian', every: 6, unit: 'month', kmEvery: 0 }, { name: 'Servis berkala (ikuti buku servis)', every: 12, unit: 'month', kmEvery: 15000 }, { name: 'Rotasi & cek ban', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Ganti filter kabin AC', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti cairan rem', every: 24, unit: 'month', kmEvery: 0 }, { name: 'Cek sistem pendingin baterai', every: 24, unit: 'month', kmEvery: 0 }],
+    mobil_ev: [{ name: 'Cek kesehatan baterai & sistem pengisian', every: 6, unit: 'month', kmEvery: 0 }, { name: 'Servis berkala (ikuti buku servis)', every: 12, unit: 'month', kmEvery: 15000 }, { name: 'Rotasi & cek ban', every: 6, unit: 'month', kmEvery: 10000 }, { name: 'Servis AC mobil (cek freon & evaporator)', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti filter kabin AC', every: 12, unit: 'month', kmEvery: 0 }, { name: 'Ganti cairan rem', every: 24, unit: 'month', kmEvery: 0 }, { name: 'Cek sistem pendingin baterai', every: 24, unit: 'month', kmEvery: 0 }],
   };
   const vehPlansFor = (kind) => VEH_PLANS[kind] || VEH_PLANS.mobil;
   const VEH_KINDS = [['motor', 'Motor'], ['mobil', 'Mobil'], ['motor_ev', 'Motor listrik (EV)'], ['mobil_ev', 'Mobil listrik (EV)'], ['lain', 'Lainnya']];
@@ -87,9 +87,9 @@
   function fieldHTML(f, v) {
     const val = v == null ? '' : v;
     if (f.type === 'check') return `<label class="f c"><input type="checkbox" name="${f.k}" ${val ? 'checked' : ''}> ${esc(f.label)}</label>`;
+    if (f.type === 'photo') return `<div class="f"><span>${esc(f.label)}</span><div class="inl" style="gap:8px;margin-top:6px"><button type="button" class="btn alt grow" data-cam="${f.k}">📷 Ambil foto</button><button type="button" class="btn alt grow" data-gal="${f.k}">🖼️ Galeri</button></div><input name="${f.k}" type="file" accept="image/*" hidden><div class="s" id="pv-${f.k}" style="margin-top:6px">Belum ada foto</div></div>`;
     let inner;
-    if (f.type === 'photo') inner = `<input name="${f.k}" type="file" accept="image/*">`;
-    else if (f.type === 'select') inner = `<select name="${f.k}" ${f.addList ? 'data-add="' + f.addList + '"' : ''}>${f.opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}${f.addList ? '<option value="__new">➕ Tambah baru…</option>' : ''}</select>`;
+    if (f.type === 'select') inner = `<select name="${f.k}" ${f.addList ? 'data-add="' + f.addList + '"' : ''}>${f.opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}${f.addList ? '<option value="__new">➕ Tambah baru…</option>' : ''}</select>`;
     else if (f.type === 'textarea') inner = `<textarea name="${f.k}" rows="3">${esc(val)}</textarea>`;
     else if (f.type === 'amount') inner = `<input name="${f.k}" inputmode="numeric" autocomplete="off" placeholder="mis. 25.000" value="${esc(val)}">`;
     else if (f.type === 'dec') inner = `<input name="${f.k}" inputmode="decimal" autocomplete="off" placeholder="${esc(f.ph || '')}" value="${esc(val)}">`;
@@ -102,6 +102,17 @@
     init = init || {};
     dlg.innerHTML = `<form method="dialog" novalidate><h3>${esc(title)}</h3>${note ? `<p class="note" style="margin:0">${esc(note)}</p>` : ''}${fields.map((f) => fieldHTML(f, init[f.k])).join('')}<div class="err" id="ferr"></div><div class="btns"><button type="button" class="btn alt" id="fcancel">Batal</button><button class="btn" id="fok" type="submit">Simpan</button></div>${(extras || []).length ? `<div class="btns">${extras.map((x, i) => `<button type="button" class="btn bad sm" data-x="${i}">${esc(x.label)}</button>`).join('')}</div>` : ''}</form>`;
     const form = dlg.querySelector('form');
+    // tombol foto: kamera belakang langsung (capture) atau galeri; tampilkan nama berkas terpilih
+    form.querySelectorAll('[data-cam],[data-gal]').forEach((b) => b.addEventListener('click', () => {
+      const inp = form.elements[b.dataset.cam || b.dataset.gal]; if (!inp) return;
+      if (b.dataset.cam) inp.setAttribute('capture', 'environment'); else inp.removeAttribute('capture');
+      inp.click();
+    }));
+    form.addEventListener('change', (e) => {
+      const t = e.target; if (!t || t.type !== 'file') return;
+      const pv = form.querySelector('#pv-' + t.name), f0 = t.files && t.files[0];
+      if (pv) pv.textContent = f0 ? '✔ Foto dipilih: ' + (f0.name || 'foto') + ' (' + Math.max(1, Math.round(f0.size / 1024)) + ' KB) — tersimpan saat menekan Simpan' : 'Belum ada foto';
+    });
     form.addEventListener('change', (e) => {
       const el = e.target;
       if (el.tagName === 'SELECT' && el.value === '__new' && el.dataset.add) {
@@ -461,10 +472,11 @@
     d = d || {};
     openForm(d.id ? 'Ubah dokumen' : 'Dokumen penting', [
       { k: 'title', label: 'Nama dokumen', req: true, list: ['Sertifikat rumah', 'Polis asuransi', 'Kartu keluarga', 'Paspor', 'SIM', 'Kontrak kerja', 'Perjanjian sewa'] },
+      { k: 'photo', label: '📷 Foto / scan dokumen (opsional)', type: 'photo' },
       { k: 'expiry', label: 'Berlaku sampai / kedaluwarsa', type: 'date' }, { k: 'place', label: 'Disimpan di mana (laci, brankas, folder…)' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
-    ], d, (v) => { C.put(store, 'doc', { id: d.id, title: v.title, expiry: v.expiry, place: v.place, notes: v.notes }); commit(); },
+    ], d, (v) => { const rec = C.put(store, 'doc', { id: d.id, title: v.title, expiry: v.expiry, place: v.place, notes: v.notes }); commit(); if (v.photo) saveDocPhoto(rec, v.photo); },
     d.id ? [{ label: 'Hapus dokumen', fn: () => { list('pfile').filter((f) => f.docId === d.id).forEach((f) => { IDB.del(f.id); C.remove(store, f.id); }); C.remove(store, d.id); commit(); } }] : null,
-    'Catat lokasi & masa berlaku. Foto/scan ditambahkan lewat tombol 📷 di daftar dokumen setelah disimpan. Foto KTP/NPWP tiap orang juga bisa di Brankas identitas.');
+    'Ketuk 📷 Ambil foto untuk memotret dokumen langsung dengan kamera, atau 🖼️ Galeri untuk memilih foto yang sudah ada. Foto tersimpan hanya di HP ini. Bisa juga ditambah nanti lewat tombol 📷 di daftar dokumen.');
   }
   function journalForm(j) {
     j = j || {};
@@ -668,6 +680,13 @@
   function downloadText(name, text, type) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' })); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  // hasil ekspor: tawarkan Unduh atau Bagikan (menu = ketukan baru, jadi izin berbagi tetap sah)
+  function deliverFile(name, bytes, mime) {
+    const blob = new Blob([bytes], { type: mime }), file = new File([blob], name, { type: mime });
+    const items = [{ label: '⬇️ Unduh ke HP', fn: () => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Mengunduh ' + name); } }];
+    if (navigator.canShare && navigator.canShare({ files: [file] })) items.push({ label: '📤 Bagikan (WhatsApp, email, Drive…)', fn: () => navigator.share({ files: [file], title: name }).catch(() => { /* dibatalkan */ }) });
+    openMenu('✅ ' + name + ' siap (' + Math.max(1, Math.round(bytes.length / 1024)) + ' KB)', items);
   }
   function routineForm(r) {
     r = r || {};
@@ -873,7 +892,7 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${C.isBirthdayTitle(o.ev.title) ? '🎂 ' : ''}${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
+const APP_VERSION = '0.5.4', APP_DATE = '15 Nov 2026';
   const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
@@ -1177,6 +1196,7 @@ const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
       h += '<h2>Goal tracker</h2>' + (gs.length ? gs.map((g) => goalCard(g, bal)).join('') : '<div class="card"><div class="empty">Belum ada tujuan.<br>Mulai dari dana darurat.</div></div>');
       h += '<div class="btns"><button class="btn" data-a="goalAdd">+ Tujuan</button><button class="btn alt" data-a="goalTpl">✨ Dari template</button></div>';
     }
+    if (tab === 'trx' || tab === 'stat') h += '<button class="btn alt full" style="margin-top:10px" data-a="nav" data-to="ekspor">📤 Ekspor ke Excel / PDF</button>';
     return { title: 'Uang', sub: '', html: h };
   }
 
@@ -1189,12 +1209,17 @@ const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
       mrow('c4', '📄', 'Dokumen penting', 'Lokasi simpan & masa berlaku', 'dokumen')])
       + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c4', '🗂️', 'Brankas identitas', 'Foto KTP, NPWP, KK siap dikirim', 'brankas'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
       + g('Pribadi', [mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
-      + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
+      + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c3', '📤', 'Ekspor data (Excel / PDF)', 'Laporan uang & rumah untuk dicetak atau diolah', 'ekspor'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
     return { title: 'Lainnya', sub: 'v' + APP_VERSION + ' · oleh Illusix', html: h + ABOUT_HTML };
   }
 
   // ---------- subhalaman ----------
   const pages = {
+    ekspor() {
+      const ym = ui.moneyMonth || nowYM(); if (!ui.expTx) ui.expTx = 'month';
+      const btn = (fmt, scope, label) => `<button class="btn ${fmt === 'xlsx' ? '' : 'alt'} full" data-a="expRun" data-fmt="${fmt}" data-scope="${scope}" style="margin-bottom:8px">${label}</button>`;
+      return { title: 'Ekspor data', sub: ymLabel(ym), html: `<p class="note" style="margin:0 0 8px">Pilih isi transaksi, lalu ekspor. Excel (.xlsx) bisa dibuka di Excel, Google Sheets, atau LibreOffice. PDF siap dicetak atau dikirim.</p>${seg('expTx', [['month', 'Transaksi ' + ymLabel(ym)], ['all', 'Semua transaksi']], ui.expTx)}<h2>📗 Excel (.xlsx)</h2><div class="card pad">${btn('xlsx', 'all', 'Semua data (satu file, banyak sheet)')}${btn('xlsx', 'uang', 'Uang saja (transaksi, akun, anggaran, tagihan, tujuan)')}${btn('xlsx', 'rumah', 'Rumah saja (perawatan, kendaraan, aset, stok, dokumen, kontak)')}</div><h2>📕 PDF</h2><div class="card pad">${btn('pdf', 'uang', 'Laporan Uang')}${btn('pdf', 'rumah', 'Laporan Rumah')}${btn('pdf', 'all', 'Laporan lengkap')}</div><p class="note">Yang ikut: daftar dan angka. <b>Tidak ikut:</b> nomor KTP/NPWP/KK/SIM dan semua foto (jaga privasi). Bulan di judul mengikuti bulan yang sedang dibuka di tab Uang. Teks emoji tidak tampil di PDF.</p>` };
+    },
     perawatan() {
       const gSel = ui.planGroup, all = list('plan').filter((p) => !p.vehicleId);
       const shown = all.filter((p) => gSel === 'semua' || p.group === gSel).sort(planSort);
@@ -1363,6 +1388,7 @@ const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
         + D('📱 Pasang di layar utama HP', '<p><b>Android (Chrome):</b> buka alamat aplikasi, menu ⋮ → <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>. Ikon RUMAHKU muncul seperti aplikasi biasa dan bisa dibuka tanpa bilah alamat.</p><p><b>iPhone (Safari):</b> tombol Bagikan → <b>Tambah ke Layar Utama</b>.</p><p class="s">Setelah dibuka sekali dengan internet, aplikasi tetap terbuka saat offline.</p>')
         + D('☁️ Hubungkan Google Drive (sekali saja)', `<p><b>Tidak wajib.</b> Tanpa Drive, data tetap tersimpan di HP Anda. Cukup rutin ketuk <b>Lainnya → Sinkron &amp; backup → Bagikan backup</b> dan simpan ke Files/Drive/WhatsApp. Langkah di bawah hanya bila ingin data otomatis sama di beberapa perangkat.</p><ol><li>Buka <b>console.cloud.google.com</b> dan masuk dengan akun Google Anda.</li><li>Buat <b>Project baru</b> (nama bebas, mis. "rumahku").</li><li><b>APIs &amp; Services → Library</b>, cari <b>Google Drive API</b>, klik <b>Enable</b>.</li><li><b>OAuth consent screen</b> (atau "Google Auth Platform"): pilih <b>External</b>, isi nama aplikasi dan email Anda. Di <b>Audience / Test users</b>, tambahkan email Google Anda sendiri.</li><li><b>Credentials → Create credentials → OAuth client ID</b>, jenis <b>Web application</b>.</li><li>Pada <b>Authorized JavaScript origins</b> isi persis: <code>${esc(origin)}</code> (tanpa garis miring di akhir dan tanpa nama folder).</li><li>Salin <b>Client ID</b> (berakhiran .apps.googleusercontent.com).</li><li>Di aplikasi: <b>Lainnya → Sinkron &amp; backup</b>, tempel Client ID, ketuk <b>Simpan ID</b>, lalu <b>Hubungkan &amp; sinkron</b>.</li></ol><p class="s">Layar "Google belum memverifikasi aplikasi ini" muncul untuk aplikasi pribadi: pilih <b>Lanjutan → Lanjutkan</b>. Aplikasi hanya meminta akses ke folder tersembunyi miliknya sendiri di Drive, bukan seluruh file Anda. Tampilan menu Google Cloud kadang berubah nama; ikuti padanan terdekat.</p>`)
         + D('📅 Kalender & pengingat acara', '<p>Di bawah kalender ada <b>Agenda bulan ini</b>: semua acara, ulang tahun 🎂, tagihan, STNK/pajak, dst. urut tanggal. Yang <b>sudah lewat dicoret</b>.</p><p>Saat membuat acara, pilih <b>Pengingat</b> (tepat waktu, 10 menit, 30 menit, 1 jam, <b>3 jam</b>, <b>1 hari</b>, <b>3 hari</b>, 1 minggu sebelumnya) dan boleh menambah <b>pengingat kedua</b>. Acara tanpa jam dihitung dari pukul 08.00 hari H. Judul yang memuat "ulang tahun/ultah" otomatis diberi 🎂. Ulang tahun anggota keluarga diingatkan otomatis H-1 dan hari H pukul 08.00.</p><p class="note">Pengingat berbunyi selama aplikasi terbuka/berjalan di latar. Agar berbunyi saat HP terkunci, ekspor .ics di Lainnya → Notifikasi.</p>')
+        + D('📤 Ekspor ke Excel / PDF', '<p><b>Lainnya → Ekspor data</b> (atau tombol 📤 di tab Uang → Transaksi/Statistik). Pilih Excel (.xlsx) untuk diolah di Excel/Google Sheets, atau PDF untuk dicetak/dikirim. Pilih transaksi bulan ini atau semua periode.</p><p class="note">Nomor identitas dan foto tidak pernah ikut diekspor.</p>')
         + D('🔔 Pengingat & notifikasi', '<p>Ketuk <b>Lainnya → Notifikasi → Izinkan notifikasi</b>. Pengingat berbunyi selama aplikasi terbuka atau berjalan di latar.</p><p>Agar <b>pasti berbunyi saat HP terkunci</b>, ekspor ke Kalender HP (.ics) dari halaman Notifikasi, lalu buka berkasnya dan pilih Google Calendar.</p>')
         + D('👪 Dipakai bersama / dites orang lain', '<p>Bagikan alamat aplikasi. <b>Setiap orang mendapat aplikasi kosong dan datanya terpisah di HP masing-masing</b>; tidak ada data yang bercampur dan tidak ada server pusat.</p><p>Untuk sinkron Drive, orang lain memakai Client ID mereka sendiri (langkah di atas), atau Anda menambahkan email mereka sebagai <b>Test users</b> di project Anda. Untuk berbagi data keluarga yang sama antar HP, pakai satu akun Google yang sama atau ekspor/impor JSON.</p><button class="btn alt" data-a="shareApp">Bagikan alamat aplikasi</button><p class="s">' + esc(url) + '</p>')
         + D('🧪 Data contoh', `<p class="s">Isi contoh perawatan, tagihan, kendaraan, dan transaksi untuk melihat cara kerja. Yang belum Anda ubah bisa dihapus sekaligus; yang sudah Anda edit otomatis menjadi milik Anda.</p>${demo ? '<button class="btn bad" data-a="demoOff">Hapus data contoh</button>' : '<button class="btn" data-a="demoOn">Isi data contoh</button>'}`)
@@ -1422,6 +1448,16 @@ const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
     back() { try { history.back(); } catch (e) { ui.stack.pop(); render(); } },
     pageAdd() { if (ui.addFn) ui.addFn(); },
     set(d) { ui[d.k] = d.v; render(); },
+    expRun(d) {
+      try {
+        const ym = ui.moneyMonth || nowYM(), today = C.today(), allTx = ui.expTx === 'all';
+        const shs = Exp.sets(C, store, { ym, allTx, scope: d.scope, today });
+        if (!shs.length) return toast('Belum ada data untuk diekspor');
+        const label = { all: 'lengkap', uang: 'uang', rumah: 'rumah' }[d.scope], base = 'rumahku-' + label + '-' + (d.scope === 'rumah' ? today : (allTx ? 'semua' : ym)) + (d.fmt === 'pdf' ? '' : '');
+        if (d.fmt === 'xlsx') deliverFile(base + '.xlsx', Exp.xlsx(shs), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        else deliverFile(base + '.pdf', Exp.pdf('Laporan ' + label + ' — RUMAHKU-ONE', 'Periode ' + ymLabel(ym) + ' · dibuat ' + fmtDate(today) + ' · v' + APP_VERSION, shs), 'application/pdf');
+      } catch (e) { toast('Gagal membuat berkas: ' + e.message); }
+    },
     quick() {
       openMenu('Tambah cepat', [
         { label: '✅ Tugas', fn: () => taskForm() }, { label: '💸 Pengeluaran', fn: () => txForm('expense') }, { label: '💰 Pemasukan', fn: () => txForm('income') },
@@ -1550,7 +1586,7 @@ const APP_VERSION = '0.5.2', APP_DATE = '15 Nov 2026';
     const veh = C.put(store, 'veh', D({ name: 'Honda Beat', kind: 'motor', plate: 'B 1234 XYZ', year: 2021, odometer: 24300, pajakDue: add(21), stnkDue: '' }));
     C.put(store, 'plan', D({ name: 'Ganti oli', group: 'kendaraan', every: 2, unit: 'month', nextDue: add(12), vehicleId: veh.id, kmEvery: 2500, nextKm: 24600, cost: 60000 }));
     C.put(store, 'plan', D({ name: 'Servis berkala', group: 'kendaraan', every: 6, unit: 'month', nextDue: add(94), vehicleId: veh.id, kmEvery: 10000, nextKm: 30000, cost: 250000 }));
-    C.put(store, 'plan', D({ name: 'Servis AC', group: 'rumah', every: 3, unit: 'month', nextDue: add(-4), cost: 150000, lastDone: add(-94) }));
+    C.put(store, 'plan', D({ name: 'Servis AC rumah', group: 'rumah', every: 3, unit: 'month', nextDue: add(-4), cost: 150000, lastDone: add(-94) }));
     C.put(store, 'plan', D({ name: 'Kuras toren air', group: 'rumah', every: 6, unit: 'month', nextDue: add(61) }));
     C.put(store, 'plan', D({ name: 'Cek instalasi listrik & MCB', group: 'rumah', every: 12, unit: 'month', nextDue: add(200) }));
     C.put(store, 'bill', D({ name: 'Listrik PLN', amountEst: 450000, dueDay: C.parseD(add(2)).getDate(), paidYM: ymShift(nowYM(), -1) }));

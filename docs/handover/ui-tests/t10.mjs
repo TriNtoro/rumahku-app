@@ -9,12 +9,12 @@ const txt=()=>p.evaluate(()=>document.getElementById('top').innerText+'\n'+docum
 const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m); if(!c)process.exitCode=1;};
 const nav=(to)=>click(`[data-a=nav][data-to="${to}"]`); const tab=(v)=>click(`#nav [data-v=${v}]`);
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-let t=await txt(); ok(/v0\.5\.2/.test(t),'Versi terlihat di judul Beranda (v0.5)');
-await tab('more'); t=await txt(); ok(/v0\.5\.2 · oleh Illusix/.test(t),'Versi terlihat di judul Lainnya');
+let t=await txt(); ok(/v0\.5\.4/.test(t),'Versi terlihat di judul Beranda (v0.5)');
+await tab('more'); t=await txt(); ok(/v0\.5\.4 · oleh Illusix/.test(t),'Versi terlihat di judul Lainnya');
 await nav('dokumen'); t=await txt(); ok(/Brankas KTP, NPWP, KK, SIM/.test(t),'Dokumen penting: pintu ke Brankas KTP/NPWP');
 await click('[data-a=tpl][data-k=doc]'); let l=await p.evaluate(()=>document.getElementById('dlg').innerText); ok(/KTP/.test(l)&&/NPWP/.test(l),'Template dokumen ada KTP & NPWP');
 await setf('t0',true); await click('#fok'); t=await txt(); ok(/KTP/.test(t)&&/📷/.test(t),'Dokumen KTP punya tombol 📷');
-await click('[data-a=docFiles]'); const [fc]=await Promise.all([p.waitForFileChooser(), p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/Tambah foto/.test(x.textContent)).click())]); await fc.accept(['/tmp/pt/test.png']); await sleep(800);
+await click('[data-a=docFiles]'); const [fc]=await Promise.all([p.waitForFileChooser(), p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/galeri/.test(x.textContent)).click())]); await fc.accept(['/tmp/pt/test.png']); await sleep(800);
 t=await txt(); ok(/📷 1/.test(t),'Foto scan KTP tersimpan (tombol menunjukkan 1)');
 await click('[data-a=docFiles]'); l=await p.evaluate(()=>document.getElementById('dlg').innerText); ok(/Lihat \/ kirim foto 1/.test(l),'Menu: lihat/kirim foto');
 await p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/Lihat/.test(x.textContent)).click()); await sleep(400);

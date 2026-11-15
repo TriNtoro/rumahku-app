@@ -37,7 +37,7 @@ t = await txt(); ok(!/Terlambat 4 hari/.test(t) && /3 bulan lagi/.test(t), 'Sele
 await click('[data-a=planAdd]'); await setf('name', 'Cat ulang pagar'); await setf('every', '12'); await submit();
 t = await txt(); ok(/Cat ulang pagar/.test(t), 'tambah rencana perawatan manual');
 // template
-await click('[data-a=planTpl]'); await setf('t4', true); await submit(); t = await txt(); ok(/Semprot anti rayap/.test(t), 'tambah dari template');
+await click('[data-a=planTpl]'); await setf('t6', true); await submit(); t = await txt(); ok(/Semprot anti rayap/.test(t), 'tambah dari template');
 // kendaraan
 await p.evaluate(() => history.back()); await new Promise((r) => setTimeout(r, 300));
 await nav('kendaraan'); t = await txt();
@@ -90,7 +90,7 @@ await tab('more'); await shot('lainnya');
 // hapus data contoh: data asli (Avanza, PBB, Cat ulang pagar) tetap
 await nav('bantuan'); await click('[data-a=demoOff]');
 const left = await p.evaluate(() => { const C = window.__rk.C, s = window.__rk.store(); return { veh: C.list(s, 'veh').map((v) => v.name), bill: C.list(s, 'bill').map((v) => v.name), plan: C.list(s, 'plan').map((v) => v.name), tx: C.list(s, 'tx').length }; });
-ok(left.veh.join() === 'Avanza' && left.bill.includes('PBB') && left.bill.includes('Listrik PLN') && !left.bill.includes('Internet') && left.plan.includes('Cat ulang pagar') && left.plan.includes('Semprot anti rayap/hama') && !left.plan.includes('Kuras toren air') && left.plan.includes('Servis AC'), 'hapus data contoh (yang sudah saya ubah/bayar tetap milik saya) menyisakan data asli: ' + JSON.stringify(left));
+ok(left.veh.join() === 'Avanza' && left.bill.includes('PBB') && left.bill.includes('Listrik PLN') && !left.bill.includes('Internet') && left.plan.includes('Cat ulang pagar') && left.plan.includes('Semprot anti rayap/hama') && !left.plan.includes('Kuras toren air') && left.plan.includes('Servis AC rumah'), 'hapus data contoh (yang sudah saya ubah/bayar tetap milik saya) menyisakan data asli: ' + JSON.stringify(left));
 // persist & reload
 await p.reload({ waitUntil: 'networkidle0' }); await tab('rumah'); await nav('kendaraan'); t = await txt(); ok(/Avanza/.test(t), 'data bertahan setelah reload');
 console.log('ERRORS:', JSON.stringify(errs)); ok(errs.length === 0, 'tanpa error konsol');

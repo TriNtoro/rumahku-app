@@ -1,6 +1,6 @@
 # RUMAHKU-ONE — Serah Terima ke Codex
 
-Dokumen utama. Dibuat 15 Nov 2026 dari pemeriksaan **source code aktual** di folder kerja `rumahku-app` (versi aplikasi **0.5.2**; v0.5.2 = kamera foto cepat, agenda kalender dicoret, pengingat gaya Google Calendar). Dokumen pendamping: `PROJECT_STATUS.md`, `TECHNICAL_DECISIONS.md`, `KNOWN_ISSUES.md`, `DEVELOPMENT_GUIDE.md`, `NEXT_ROADMAP.md`.
+Dokumen utama. Dibuat 15 Nov 2026 dari pemeriksaan **source code aktual** di folder kerja `rumahku-app` (versi aplikasi **0.5.4**; 0.5.2 = kamera foto cepat, agenda kalender dicoret, pengingat gaya Google Calendar; 0.5.3 = tombol kamera di formulir dokumen; 0.5.4 = template Servis AC rumah/mobil + ekspor Excel/PDF). Dokumen pendamping: `PROJECT_STATUS.md`, `TECHNICAL_DECISIONS.md`, `KNOWN_ISSUES.md`, `DEVELOPMENT_GUIDE.md`, `NEXT_ROADMAP.md`.
 
 Tanda `NEEDS VERIFICATION` berarti tidak bisa dipastikan dari kode/lingkungan yang diperiksa. Jangan menganggapnya benar atau salah sebelum dicek.
 
@@ -31,7 +31,7 @@ Folder yang diaudit **bukan repository git** (`git status` gagal: not a git repo
 
 ## 1. Kondisi terakhir
 
-- Versi: **0.5.2** (`APP_VERSION` di `app.js`, `VER = 'rk-v5-2'` di `sw.js`, README).
+- Versi: **0.5.4** (`APP_VERSION` di `app.js`, `VER = 'rk-v5-4'` di `sw.js`, README).
 - Tampil di UI: kanan judul Beranda, judul Lainnya, bawah Beranda/Lainnya, Bantuan → Tentang.
 - Ukuran: `app.js` 1.684 baris, `core.js` 538, `sw.js` 24, `index.html` 145 (CSS di dalamnya), `test/core.test.mjs` 317.
 - Tidak ada dependensi npm, tidak ada build. Satu skrip eksternal saat runtime: Google Identity Services (`accounts.google.com/gsi/client`), hanya dimuat bila pengguna menghubungkan Drive.
@@ -79,6 +79,7 @@ Tidak ada API. Seluruhnya frontend.
 ```
 rumahku-app/
 ├─ index.html        shell + seluruh CSS (variabel tema, --s1..--s8 untuk grafik) + <dialog id="dlg">
+├─ export.js         ekspor .xlsx & PDF tanpa pustaka (UMD, diuji di Node)
 ├─ core.js           logika murni (UMD: window.Core / module.exports); TANPA DOM; semua diuji
 ├─ app.js            UI: IIFE tunggal; state, form, halaman, aksi, sinkron Drive, tick pengingat
 ├─ sw.js             service worker: network-first + fallback cache; notificationclick

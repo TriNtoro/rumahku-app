@@ -1,6 +1,6 @@
 /* Service worker: app shell offline. Data pengguna tidak pernah lewat sini. */
-const VER = 'rk-v5-2';
-const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const VER = 'rk-v5-4';
+const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'export.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VER).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });

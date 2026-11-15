@@ -18,7 +18,7 @@ Service worker hanya aktif di `https://` atau `localhost`. Setelah mengubah berk
 
 ## 4. Tes unit
 ```
-node --test test/core.test.mjs      # 35 tes untuk core.js (hasil terakhir: 35 lulus)
+node --test test/core.test.mjs test/export.test.mjs   # 52 tes (core 45 + export 7); hasil terakhir: semua lulus
 ```
 `core.js` murni (tanpa DOM) sehingga dapat diuji di Node. Setiap logika baru ditaruh di `core.js` + tes; `app.js` hanya UI.
 
@@ -33,7 +33,7 @@ node smoke2.mjs && node smoke3.mjs && node t4.mjs && node t5.mjs && node t6.mjs 
 Catatan: skrip memakai viewport HP, menyimpan screenshot ke `/tmp/pt/`, dan berkas foto uji `test.png` dari path itu. Path/tanggal di-hardcode (lihat KNOWN_ISSUES M1). Jangan jalankan terhadap profil browser yang berisi data nyata (skrip menulis `localStorage`).
 
 ## 6. Build
-Tidak ada. Berkas dilayani apa adanya. Untuk rilis: kemas semua berkas (`index.html core.js app.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png README.md LICENSE.txt` + `docs/`) menjadi zip bernomor versi.
+Tidak ada. Berkas dilayani apa adanya. Untuk rilis: kemas semua berkas (`index.html core.js export.js app.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png README.md LICENSE.txt` + `docs/`) menjadi zip bernomor versi.
 
 ## 7. Variabel lingkungan
 **Tidak ada.** Satu-satunya konfigurasi: *Google OAuth Client ID* yang dimasukkan pengguna lewat UI (Lainnya → Sinkron) dan disimpan di `localStorage['rk1.cfg']`. Jangan menaruhnya di repo.

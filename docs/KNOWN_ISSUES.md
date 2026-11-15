@@ -1,4 +1,4 @@
-# Masalah yang Diketahui — RUMAHKU-ONE Lite v0.5.2
+# Masalah yang Diketahui — RUMAHKU-ONE Lite v0.5.4
 
 Diaudit 15 Nov 2026. Tingkat: **Critical** (data hilang/keamanan serius) · **High** · **Medium** · **Low**.
 Tidak ada isu yang terbukti gagal di tes. Semua butir di bawah adalah celah verifikasi, risiko desain, atau utang teknis.
@@ -7,7 +7,7 @@ Tidak ada isu yang terbukti gagal di tes. Semua butir di bawah adalah celah veri
 
 | Pemeriksaan | Perintah | Hasil |
 |---|---|---|
-| Tes unit logika | `node --test test/core.test.mjs` | **45 tes, 45 lulus, 0 gagal** (v0.5.2, 10 tes baru untuk pengingat acara/ulang tahun/ICS) |
+| Tes unit logika | `node --test test/core.test.mjs` | **52 tes, 52 lulus, 0 gagal** (core 45 + export 7) |
 | Sintaks | `node --check app.js core.js sw.js` | OK |
 | TODO/FIXME | `grep -n "TODO\|FIXME" app.js core.js` | tidak ada |
 | Tes UI Puppeteer (Chrome headless, viewport HP) | skrip di `docs/handover/ui-tests/` | Dijalankan pada rilis v0.5.1 dalam sesi pengembangan: smoke2 28 lulus, smoke3 30, t4 4, t5 1, t6 18, t7 22, t8 18, t9 9, t10 8; tanpa error konsol. **Tidak dijalankan ulang saat penyusunan dokumen ini** (butuh server lokal port 8099 + Chrome). |
@@ -63,3 +63,9 @@ Tidak ada yang diketahui.
 - **Low**: pengingat tugas (bukan acara) belum punya opsi 3 jam / hari; ulang tahun anggota keluarga selalu diingatkan H-1 & H (belum ada tombol matikan).
 - **Low**: perilaku `capture="environment"` bergantung peramban (Android Chrome membuka kamera; iOS dapat menampilkan pilihan) — NEEDS VERIFICATION di perangkat nyata.
 - Tes UI baru: `docs/handover/ui-tests/t11.mjs` (20 pemeriksaan lulus). `t6`, `smoke3`, `t10` diperbarui mengikuti perubahan UI (menu kamera/galeri, template KTP, versi).
+
+## Tambahan v0.5.3 / v0.5.4
+- **Medium** — Ekspor: `.xlsx` dan PDF dibuat tanpa pustaka (penulis zip & PDF sendiri di `export.js`). Divalidasi dengan openpyxl dan poppler, tetapi belum dibuka di Excel/Adobe Reader/Google Sheets sungguhan (`NEEDS VERIFICATION`). PDF memakai font Helvetica bawaan: emoji dibuang, huruf non-Latin tidak tampil. Lebar teks dihitung dari tabel metrik Helvetica (perkiraan untuk huruf tebal).
+- **Low** — Ekspor tidak memuat: nomor identitas, foto, rutinitas, kebiasaan, jurnal, acara/tugas. Disengaja untuk privasi/ruang lingkup; tambah bila diminta.
+- **Low** — `Bagikan` file memakai Web Share API (`navigator.canShare({files})`); tidak tersedia di semua peramban, fallback Unduh selalu ada.
+- Tes UI baru: `t12.mjs` (formulir dokumen dengan kamera), `t13.mjs` (ekspor + template AC). `smoke2`, `t9`, `t10` disesuaikan.
