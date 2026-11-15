@@ -1,0 +1,32 @@
+import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'], headless: 'new' });
+const p = await b.newPage(); await p.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console',m=>{if(m.type()==='error')errs.push(m.text())});
+await p.goto('http://localhost:8099/index.html',{waitUntil:'networkidle0'}); await p.evaluate(()=>localStorage.clear()); await p.reload({waitUntil:'networkidle0'});
+const click=(q)=>p.evaluate((s)=>{const e=document.querySelector(s); if(!e) throw new Error('tak ada '+s); e.click();},q);
+const setf=(n,v)=>p.evaluate((n,v)=>{const e=document.querySelector('#dlg [name='+n+']'); if(!e) throw new Error('field '+n); if(e.type==='checkbox')e.checked=v; else e.value=v; e.dispatchEvent(new Event('change',{bubbles:true}));},n,v);
+const txt=()=>p.evaluate(()=>document.getElementById('top').innerText+'\n'+document.getElementById('main').innerText);
+const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m); if(!c)process.exitCode=1;};
+const nav=(to)=>click(`[data-a=nav][data-to="${to}"]`); const tab=(v)=>click(`#nav [data-v=${v}]`);
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+// akun + transaksi dengan bukti
+await tab('money'); await click('[data-a=accAdd]'); await setf('name','BCA'); await setf('type','bank'); await setf('opening','1000000'); await click('#fok');
+await click('[data-a=txAdd]'); await setf('amount','75000'); await setf('cat','Makan & minum');
+const inp=await p.$('#dlg [name=proof]'); await inp.uploadFile('/tmp/pt/test.png'); await click('#fok'); await sleep(800);
+let st=await p.evaluate(()=>window.__rk.C.list(window.__rk.store(),'tx').map(t=>t.proof)); ok(st.length===1&&!!st[0],'Transaksi menyimpan id bukti');
+const stored=await p.evaluate(async(id)=>{const db=await new Promise((r)=>{const q=indexedDB.open('rumahku-files',1);q.onsuccess=()=>r(q.result)});return await new Promise((r)=>{const q=db.transaction('f').objectStore('f').get(id);q.onsuccess=()=>r(q.result?q.result.size:0)});},st[0]); ok(stored>0,'Foto bukti tersimpan di IndexedDB ('+stored+' B)');
+await click('[data-a=set][data-k=moneyTab][data-v=trx]'); let t=await txt(); ok(/📎/.test(t),'Ikon 📎 pada transaksi ber-bukti');
+await click('[data-a=txOpen]'); let m=await p.evaluate(()=>document.querySelector('#dlg').innerText); ok(/Lihat \/ kirim bukti/.test(m)&&/Ganti foto bukti/.test(m)&&/Void/.test(m),'Menu transaksi: lihat/ganti bukti, void');
+await p.evaluate(()=>document.querySelector('#dlg .menu button[data-i="0"]').click()); await sleep(400);
+m=await p.evaluate(()=>document.querySelector('#dlg').innerHTML); ok(/<img/.test(m)&&/Kirim \/ bagikan/.test(m),'Bukti terbuka dengan tombol Kirim/bagikan');
+await p.evaluate(()=>document.querySelector('#dlg [data-i=d]').click()); await sleep(300);
+st=await p.evaluate(()=>window.__rk.C.list(window.__rk.store(),'tx').map(t=>t.proof)); ok(!st[0],'Hapus bukti membersihkan tautan di transaksi');
+// brankas
+await tab('more'); await nav('keluarga'); await p.evaluate(()=>document.querySelector('[data-a=personAdd],[data-a=perAdd],#addbtn,.add')&&0);
+await tab('more'); await nav('brankas'); t=await txt(); ok(/Brankas identitas/i.test(t),'Halaman brankas');
+await click('[data-a=vaultAdd]'); m=await p.evaluate(()=>document.querySelector('#dlg').innerText); ok(/Anggota baru/.test(m),'Brankas menawarkan anggota baru bila kosong');
+await p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/Anggota baru/.test(x.textContent)).click()); await setf('name','Illa'); await click('#fok');
+await click('[data-a=vaultAdd]'); await p.evaluate(()=>document.querySelector('#dlg .menu button[data-i="0"]').click()); await sleep(150); const [fc]=await Promise.all([p.waitForFileChooser(), p.evaluate(()=>[...document.querySelectorAll('#dlg .menu button')].find(x=>/galeri/.test(x.textContent)).click())]); await fc.accept(['/tmp/pt/test.png']); await sleep(600);
+await setf('label','KTP'); await click('#fok'); await sleep(600); t=await txt(); ok(/KTP/.test(t)&&/Illa/.test(t),'KTP tersimpan di brankas');
+await p.screenshot({path:'/tmp/brankas.png'});
+console.log('ERRS',errs); await b.close();
