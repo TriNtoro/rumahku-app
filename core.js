@@ -698,6 +698,57 @@
     return d.length >= 8 && d.length <= 15 ? d : '';
   }
 
+  // ---------- Minum air ----------
+  // Catatan = `wlog` {date, time, ml, gml, goalMl, void}; pengaturan = satu record `wcfg`. Perubahan target/ukuran gelas tidak mengubah riwayat (ml per catatan + snapshot target).
+  const WATER_DEFAULT = { on: true, goal: 8, glassMl: 250, from: '08:00', to: '20:00', every: 60, quietFrom: '', quietTo: '' };
+  function waterCfg(store) {
+    const r = store.rec.wcfg && !store.rec.wcfg._d ? store.rec.wcfg : {}, o = Object.assign({}, WATER_DEFAULT);
+    for (const k of Object.keys(WATER_DEFAULT)) if (r[k] !== undefined && r[k] !== null && r[k] !== '') o[k] = r[k];
+    if (r.quietFrom === '' || r.quietTo === '') { o.quietFrom = ''; o.quietTo = ''; }
+    o.goal = Math.min(40, Math.max(1, Math.round(+o.goal) || 8)); o.glassMl = Math.min(2000, Math.max(50, Math.round(+o.glassMl) || 250)); o.every = Math.max(15, Math.round(+o.every) || 60);
+    o.goalMl = o.goal * o.glassMl; return o;
+  }
+  const waterLogs = (store, dateS) => list(store, 'wlog').filter((l) => !l.void && l.date === dateS).sort((a, b) => cmp((a.time || '') + a._u, (b.time || '') + b._u));
+  function waterDay(store, dateS) {
+    const cfg = waterCfg(store), ls = waterLogs(store, dateS), ml = ls.reduce((s, l) => s + (+l.ml || 0), 0);
+    const goalMl = ls.length && ls[ls.length - 1].goalMl ? +ls[ls.length - 1].goalMl : cfg.goalMl; // riwayat memakai target saat dicatat
+    return { ml, goalMl, glasses: Math.round((ml / cfg.glassMl) * 10) / 10, pct: goalMl > 0 ? Math.min(999, Math.round((ml / goalMl) * 100)) : 0, count: ls.length, logs: ls, reached: ml >= goalMl };
+  }
+  // tambah air: ml bulat 1..5000; hindari catatan ganda (id deterministik per tanggal+menit+ml+urutan) lewat batas waktu di UI dan pengecekan ini
+  function waterAdd(store, ml, dateS, hm, nowISO) {
+    const v = Math.round(+ml); if (!(v >= 1 && v <= 5000)) return null;
+    const cfg = waterCfg(store); return put(store, 'wlog', { date: dateS, time: hm, ml: v, gml: cfg.glassMl, goalMl: cfg.goalMl, void: false }, nowISO);
+  }
+  function waterUndoLast(store, dateS, nowISO) { const ls = waterLogs(store, dateS); if (!ls.length) return null; const l = ls[ls.length - 1]; put(store, 'wlog', { id: l.id, void: true }, nowISO); return l; }
+  function inQuiet(min, qf, qt) { const a = toMin(qf), b = toMin(qt); if (a == null || b == null || a === b) return false; return a < b ? min >= a && min < b : min >= a || min < b; }
+  function waterTimes(cfg) {
+    const a = toMin(cfg.from), b = toMin(cfg.to); if (a == null || b == null || b < a) return [];
+    const out = []; for (let m = a; m <= b && out.length < 48; m += cfg.every) if (!inQuiet(m, cfg.quietFrom, cfg.quietTo)) out.push(fmtHM(m)); return out;
+  }
+  // pengingat yang jatuh tempo sekarang (null bila mati, target tercapai, di luar rentang, jam tenang, atau sudah dikirim)
+  function waterDue(store, dateS, nowMin, fired, graceMin) {
+    const cfg = waterCfg(store); if (!cfg.on || inQuiet(nowMin, cfg.quietFrom, cfg.quietTo)) return null;
+    const day = waterDay(store, dateS); if (day.reached) return null;
+    const grace = graceMin || 20; let hit = null;
+    waterTimes(cfg).forEach((hm) => { const m = toMin(hm); if (m <= nowMin && nowMin - m <= grace) hit = hm; });
+    if (!hit) return null; const key = 'wt|' + dateS + '|' + hit; if (fired && fired.has(key)) return null;
+    return { key, ml: day.ml, goalMl: day.goalMl, glasses: day.glasses, goal: cfg.goal };
+  }
+  function waterHistory(store, endS, days) {
+    const out = []; for (let i = 0; i < days; i++) { const d = addDays(endS, -i), x = waterDay(store, d); out.push({ date: d, ml: x.ml, goalMl: x.goalMl, pct: x.pct, count: x.count }); } return out;
+  }
+
+  // Sabtu/Minggu (untuk pewarnaan kalender); tanggal lokal YYYY-MM-DD
+  function isWeekend(dateS) { const d = parseD(dateS).getDay(); return d === 0 || d === 6; }
+  // Aksi kontak dari nomor telepon. wa = angka internasional untuk wa.me (kosong bila tidak valid); tel = nomor dengan + untuk tel:/sms:.
+  // Nomor Indonesia harus ponsel (62 + 8xx, 9–12 digit sesudah 62); nomor luar negeri diterima 8–15 digit.
+  function phoneActions(phone) {
+    const wa = waNumber(phone); if (!wa) return { ok: false, wa: '', tel: '' };
+    if (wa.startsWith('62') && !/^628\d{8,11}$/.test(wa)) return { ok: false, wa: '', tel: '+' + wa };
+    return { ok: true, wa, tel: '+' + wa };
+  }
+  function waUrl(phone, text) { const a = phoneActions(phone); return a.ok ? 'https://wa.me/' + a.wa + (text ? '?text=' + encodeURIComponent(text) : '') : ''; }
+
   // ICS: pengingat nyata di HP lewat aplikasi Kalender (jalan walau aplikasi ini tertutup).
   const icsEsc = (s) => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/[,;]/g, (c) => '\\' + c);
   function icsFold(line) {
@@ -746,6 +797,6 @@
     monthReport, budgetStatus, streak, warrantySoon, serviceDue,
     kmLeft, daysBetween, countdown, urgency, intervalLabel, planNext, completePlan, dueInMonth, billNext, billState, billLedger, billPayPlan, applyBillPay, voidBillPay, billMonthSummary, billEndDate, billOccAfter, billLive, lowStock, homeAttention,
     emptyStore, put, remove, list, mergeStores, validStore,
-    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, calendarItems, isBirthdayTitle, remindList, remindLabel, eventDue, birthdayDue, ALLDAY_REF, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
+    greeting, toMin, fmtHM, routineTimes, routineActiveOn, routineTarget, routineDone, routineDue, routineExpected, fireAt, inWindow, waNumber, waterCfg, waterDay, waterAdd, waterUndoLast, waterTimes, waterDue, waterHistory, inQuiet, isWeekend, phoneActions, waUrl, calendarItems, isBirthdayTitle, remindList, remindLabel, eventDue, birthdayDue, ALLDAY_REF, topSlices, dailyCum, netWorthAt, assetsDebt, avgMonthly, EF_MONTHS, healthLevel, goalProgress, budgetPace, bmi, bmiCategory, healthyRange, waistRisk, weightSeries, weeklyRate, maskId, ageOn, buildICS, routineICS,
   };
 });

@@ -14,14 +14,14 @@ const setv=(o)=>p.evaluate((o)=>{ for(const [k,v] of Object.entries(o)){ const e
 const submit=()=>p.evaluate(()=>{const f=document.querySelector('#dlg form'); f.requestSubmit();});
 const store=()=>p.evaluate(()=>JSON.parse(localStorage.getItem('rk1.store')));
 const recs=async(t)=>Object.values((await store()).rec).filter(r=>r._t===t&&!r._d);
-let t=await txt(); ok(/v0\.5\.6/.test(t),'Versi v0.5.6');
+let t=await txt(); ok(/v0\.5\.7/.test(t),'Versi v0.5.7');
 await click('#nav [data-v=more]'); t=await txt(); ok(/Tagihan & angsuran/.test(t),'Lainnya: Tagihan & angsuran');
 await click('[data-a=nav][data-to=tagihan]'); t=await txt(); ok(/Tagihan/i.test(t)&&/Sisa kewajiban|Isi total/.test(t),'Halaman tagihan: dashboard');
 // 14 jenis
 await click('[data-a=billAdd]'); t=await dlgT(); ok(/KPR/.test(t)&&/Haji/.test(t)&&/Umrah/.test(t)&&/Arisan/.test(t)&&/Cicilan elektronik/.test(t)&&/Cicilan pinjaman/.test(t)&&/Asuransi/.test(t)&&/pendidikan/i.test(t)&&/Internet dan telepon/.test(t)&&/Listrik dan air/.test(t)&&/Iuran lingkungan/.test(t)&&/Langganan/.test(t)&&/lainnya/i.test(t)&&/kendaraan/i.test(t),'Menu: semua kategori bawaan');
 // KPR
 await clickT('#dlg button','KPR'); await sleep(100);
-await setv({amountEst:'5000000',dueDay:'10',total:'500000000',tenor:'180',startDate:'2026-01-10',instBefore:'10',creditor:'BTN',ref:'KPR-998877'});
+await setv({amountEst:'5000000',dueDay:'10',total:'500000000',tenor:'180',startDate:'2026-01-10',instNow:'11',creditor:'BTN',ref:'KPR-998877'});
 await submit(); await sleep(200);
 let bl=await recs('bill'); ok(bl.length===1&&bl[0].tenor===180&&bl[0].total===500000000&&bl[0].instBefore===10&&bl[0].cat==='kpr','KPR tersimpan dengan field angsuran');
 t=await txt(); ok(/angsuran 11\/180/.test(t)&&/sisa Rp ?850\.000\.000/.test(t),'Daftar: angsuran 11/180, sisa Rp850.000.000 → '+(t.match(/angsuran[^\n]*/)||[''])[0]);

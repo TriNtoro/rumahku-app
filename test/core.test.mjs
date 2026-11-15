@@ -387,3 +387,14 @@ test('buildICS: dua alarm & acara seharian', () => {
   const t = C.buildICS([{ uid: 'y', title: 'Rapat', date: '2026-11-24', time: '14:00', alarms: [180] }]);
   assert.match(t, /TRIGGER:-PT180M/);
 });
+
+test('isWeekend: Sabtu & Minggu', () => {
+  assert.equal(C.isWeekend('2026-11-14'), true); assert.equal(C.isWeekend('2026-11-15'), true); assert.equal(C.isWeekend('2026-11-16'), false); assert.equal(C.isWeekend('2026-11-13'), false);
+});
+test('phoneActions & waUrl: normalisasi 08 / +62 / 62, validasi, pesan awal', () => {
+  for (const n of ['081234567890', '+6281234567890', '6281234567890', '0812-3456-7890', '+62 812 3456 7890']) { const a = C.phoneActions(n); assert.equal(a.ok, true); assert.equal(a.wa, '6281234567890'); assert.equal(a.tel, '+6281234567890'); }
+  assert.equal(C.phoneActions('').ok, false); assert.equal(C.phoneActions('abc').ok, false); assert.equal(C.phoneActions('021-5551234').ok, false); assert.equal(C.phoneActions('0812').ok, false);
+  assert.equal(C.waUrl('081234567890'), 'https://wa.me/6281234567890');
+  assert.equal(C.waUrl('081234567890', 'Halo Bu, apa kabar?'), 'https://wa.me/6281234567890?text=Halo%20Bu%2C%20apa%20kabar%3F');
+  assert.equal(C.waUrl('123'), ''); assert.equal(C.phoneActions('+1 415 555 0100').ok, true);
+});

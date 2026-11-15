@@ -60,7 +60,7 @@
   let store = readJSON(LS);
   if (!C.validStore(store)) store = C.emptyStore();
   let cfg = readJSON(CFG) || {};
-  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, afCat: 'Semua', cardCat: null, cardShift: 0, billCat: 'Semua', billSt: 'Semua' };
+  const ui = { tab: 'today', stack: [], planGroup: 'semua', assetCat: 'Semua', stokTab: 'belanja', taskFilter: 'aktif', calMonth: null, calSel: null, moneyMonth: null, addFn: null, section: null, reveal: {}, afTab: 'kabar', afWho: null, afCat: 'Semua', cardCat: null, cardShift: 0, billCat: 'Semua', billSt: 'Semua', relF: 'Semua', famQ: '' };
   let persistMsg = 'memeriksa…';
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then((g) => { persistMsg = g ? 'aktif ✓' : 'belum diberikan browser'; }).catch(() => { persistMsg = 'tidak tersedia'; }); else persistMsg = 'tidak didukung';
   let syncMsg = '', syncing = false, syncAgain = false, syncTimer = null, ignorePop = false;
@@ -98,6 +98,8 @@
   // ---------- dialog & form ----------
   const dlg = document.getElementById('dlg');
   function closeDlg() { if (dlg.open) dlg.close(); }
+  // Pemisah ribuan otomatis saat mengetik (format Indonesia: 500.000). Nilai dibaca ulang lewat C.parseAmount yang menerima titik/koma.
+  const fmtThousands = (v) => { const s = String(v == null ? '' : v); const d = s.replace(/\D/g, ''); return /^\d+$/.test(s.replace(/[.,\s]/g, '')) && d ? d.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : s; };
   function fieldHTML(f, v) {
     const val = v == null ? '' : v;
     if (f.type === 'check') return `<label class="f c"><input type="checkbox" name="${f.k}" ${val ? 'checked' : ''}> ${esc(f.label)}</label>`;
@@ -105,7 +107,7 @@
     let inner;
     if (f.type === 'select') inner = `<select name="${f.k}" ${f.addList ? 'data-add="' + f.addList + '"' : ''}>${f.opts.map((o) => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}${f.addList ? '<option value="__new">➕ Tambah baru…</option>' : ''}</select>`;
     else if (f.type === 'textarea') inner = `<textarea name="${f.k}" rows="3">${esc(val)}</textarea>`;
-    else if (f.type === 'amount') inner = `<input name="${f.k}" inputmode="numeric" autocomplete="off" placeholder="mis. 25.000" value="${esc(val)}">`;
+    else if (f.type === 'amount') inner = `<input name="${f.k}" inputmode="numeric" autocomplete="off" data-amt="1" placeholder="mis. 25.000" value="${esc(fmtThousands(val))}">`;
     else if (f.type === 'dec') inner = `<input name="${f.k}" inputmode="decimal" autocomplete="off" placeholder="${esc(f.ph || '')}" value="${esc(val)}">`;
     else if (f.type === 'number') inner = `<input name="${f.k}" type="number" inputmode="numeric" min="0" value="${esc(val)}">`;
     else inner = `<input name="${f.k}" type="${f.type || 'text'}" value="${esc(val)}" ${f.list ? 'list="dl-' + f.k + '"' : ''} autocomplete="off">` + (f.list ? `<datalist id="dl-${f.k}">${f.list.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>` : '');
@@ -122,6 +124,14 @@
       if (b.dataset.cam) inp.setAttribute('capture', 'environment'); else inp.removeAttribute('capture');
       inp.click();
     }));
+    form.addEventListener('input', (e) => {
+      const el = e.target; if (!el || !el.dataset || !el.dataset.amt) return;
+      const raw = el.value, pos = el.selectionStart == null ? raw.length : el.selectionStart, digitsBefore = raw.slice(0, pos).replace(/\D/g, '').length;
+      if (/[^\d.,\s]/.test(raw.replace(/^\s*rp\.?\s*/i, ''))) { el.value = raw.replace(/[^\d.,\s]/g, ''); }
+      const f = fmtThousands(el.value); if (f === el.value) return; el.value = f;
+      let n = 0, i = 0; for (; i < f.length && n < digitsBefore; i++) if (/\d/.test(f[i])) n++;
+      try { el.setSelectionRange(i, i); } catch (x) { /* abaikan */ }
+    });
     form.addEventListener('change', (e) => {
       const t = e.target; if (!t || t.type !== 'file') return;
       const pv = form.querySelector('#pv-' + t.name), f0 = t.files && t.files[0];
@@ -395,15 +405,16 @@
     if (grp === 'angsuran') F.push(
       { k: 'creditor', label: 'Kreditur / lembaga (opsional)' }, { k: 'bank', label: 'Bank / penyedia pembiayaan (opsional)', list: BANKS }, { k: 'ref', label: 'Nomor kontrak / referensi (opsional, sensitif' + (vOn() ? ' — dienkripsi)' : ')') },
       { k: 'total', label: cat && (cat[0] === 'haji' || cat[0] === 'umrah') ? 'Total target biaya (Rp)' : 'Total pinjaman / pembiayaan (Rp)', type: 'amount' }, { k: 'dp', label: 'Uang muka (Rp, opsional)', type: 'amount' },
-      { k: 'tenor', label: 'Jumlah angsuran / tenor (mis. 15 tahun = 180)', type: 'number' }, { k: 'startDate', label: 'Tanggal mulai (angsuran pertama)', type: 'date' },
+      { k: 'tenor', label: 'Jumlah angsuran / tenor (mis. 15 tahun = 180)', type: 'number' },
+      { k: 'instNow', label: 'SUDAH BAYAR BERAPA KALI? Isi angsuran ke-berapa yang AKAN dibayar berikutnya (sudah 30 kali → isi 31)', type: 'number' }, { k: 'startDate', label: 'Tanggal mulai (angsuran pertama)', type: 'date' },
       { k: 'endDate', label: cat && (cat[0] === 'haji' || cat[0] === 'umrah') ? 'Target pelunasan / tanggal selesai' : 'Tanggal selesai (kosongkan: dihitung dari tenor)', type: 'date' },
-      { k: 'instBefore', label: 'Angsuran yang SUDAH dibayar sebelum memakai aplikasi (jumlah kali)', type: 'number' }, { k: 'paidBefore', label: 'Total yang sudah dibayar sebelumnya (Rp, bila tanpa tenor mis. Haji)', type: 'amount' },
+      { k: 'paidBefore', label: 'Total yang sudah dibayar sebelumnya (Rp, bila tanpa tenor mis. Haji)', type: 'amount' },
       { k: 'extra', label: 'Bunga / biaya tambahan (opsional, catatan)' });
-    if (grp === 'arisan') F.push({ k: 'tenor', label: 'Jumlah periode arisan (opsional)', type: 'number' }, { k: 'startDate', label: 'Mulai (pembayaran pertama)', type: 'date' });
+    if (grp === 'arisan') F.push({ k: 'tenor', label: 'Jumlah periode arisan (opsional)', type: 'number' }, { k: 'instNow', label: 'SUDAH BAYAR BERAPA KALI? Isi periode ke-berapa yang AKAN dibayar berikutnya (sudah 5 kali → isi 6)', type: 'number' }, { k: 'startDate', label: 'Mulai (pembayaran pertama)', type: 'date' });
     if (grp === 'simple') F.push({ k: 'startDate', label: 'Mulai berlaku (opsional)', type: 'date' }, { k: 'endDate', label: 'Berakhir (opsional)', type: 'date' });
     if (b.id) F.push({ k: 'active', label: 'Template aktif (hasilkan jadwal berikutnya)', type: 'check' }); else F.push({ k: 'paidThis', label: 'Periode ini sudah dibayar (tanpa mencatat transaksi)', type: 'check' });
     F.push({ k: 'notes', label: grp === 'arisan' ? 'Catatan (giliran / penerimaan)' : 'Catatan', type: 'textarea' });
-    const init = { name: b.name || (cat ? cat[5] : ''), kind: b.kind || 'tagihan', amountEst: b.amountEst || '', freq: b.freq || 'monthly', dueWeekday: String(b.dueWeekday == null ? 6 : b.dueWeekday), dueDay: b.dueDay, creditor: b.creditor, bank: b.bank, ref, total: b.total || '', dp: b.dp || '', tenor: b.tenor || '', startDate: b.startDate, endDate: b.endDate, instBefore: b.instBefore || '', paidBefore: b.paidBefore || '', extra: b.extra, active: b.active !== false, notes: b.notes };
+    const init = { name: b.name || (cat ? cat[5] : ''), kind: b.kind || 'tagihan', amountEst: b.amountEst || '', freq: b.freq || 'monthly', dueWeekday: String(b.dueWeekday == null ? 6 : b.dueWeekday), dueDay: b.dueDay, creditor: b.creditor, bank: b.bank, ref, total: b.total || '', dp: b.dp || '', tenor: b.tenor || '', startDate: b.startDate, endDate: b.endDate, instNow: (+b.instBefore || 0) > 0 ? (+b.instBefore) + 1 : '', paidBefore: b.paidBefore || '', extra: b.extra, active: b.active !== false, notes: b.notes };
     openForm((b.id ? 'Ubah: ' : 'Baru: ') + (cat ? cat[2] : 'tagihan rutin'), F, init, (v) => {
       const num = (x) => (x === '' || x == null ? 0 : C.parseAmount(x)), int = (x) => (x === '' || x == null ? 0 : /^\d{1,4}$/.test(String(x)) ? +x : null);
       const weekly = grp === 'arisan' && v.freq === 'weekly', day = +v.dueDay;
@@ -415,7 +426,7 @@
       for (const k of ['startDate', 'endDate']) if (k in v) { if (v[k] && !/^\d{4}-\d{2}-\d{2}$/.test(v[k])) return 'Format tanggal tidak valid.'; data[k] = v[k]; }
       if (data.startDate && data.endDate && data.endDate < data.startDate) return 'Tanggal selesai tidak boleh sebelum tanggal mulai.';
       if ('tenor' in v) { const t = int(v.tenor); if (t == null) return 'Tenor harus bilangan bulat.'; data.tenor = t; }
-      if ('instBefore' in v) { const t = int(v.instBefore); if (t == null) return 'Angsuran sebelumnya harus bilangan bulat.'; if (data.tenor && t > data.tenor) return 'Angsuran sebelumnya tidak boleh melebihi tenor.'; data.instBefore = t; }
+      if ('instNow' in v) { const t = int(v.instNow); if (t == null) return 'Angsuran ke-berapa harus bilangan bulat.'; if (data.tenor && t > data.tenor) return 'Angsuran ke-' + t + ' melebihi tenor (' + data.tenor + ').'; data.instBefore = Math.max(0, t - 1); }
       for (const k of ['total', 'dp', 'paidBefore']) if (k in v) { const n = num(v[k]); if (n == null) return 'Nominal harus bilangan bulat rupiah.'; data[k] = n; }
       for (const k of ['creditor', 'bank', 'extra']) if (k in v) data[k] = v[k];
       if (b.id) data.active = !!v.active; else { data.active = true; if (v.paidThis) data.paidYM = nowYM(); }
@@ -573,7 +584,11 @@
   }
 
   // ---------- v0.3: profil, rutinitas, keluarga, afeksi ----------
-  const REL = ['Istri', 'Suami', 'Pasangan', 'Pacar', 'Tunangan', 'Anak', 'Orang tua', 'Mertua', 'Saudara', 'Lainnya'];
+  // Tag hubungan. Nilai lama (Pasangan, Pacar, Tunangan, Orang tua, Mertua, atau isian bebas) tetap valid dan tidak diubah.
+  const REL_TAGS = ['Ayah', 'Ibu', 'Suami', 'Istri', 'Anak', 'Saudara', 'Kakek', 'Nenek', 'Kerabat', 'Lainnya', 'Selingkuhan'];
+  const REL_LEGACY = ['Pasangan', 'Pacar', 'Tunangan', 'Orang tua', 'Mertua'];
+  const REL = REL_TAGS.concat(REL_LEGACY);
+  const relOpts = (cur) => REL.concat(cur && !REL.includes(cur) ? [cur] : []).map((x) => [x, x]);
   const ID_KINDS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan', 'Akta lahir', 'Lainnya'];
   const FILE_LABELS = ['KTP', 'KK', 'NPWP', 'SIM', 'Paspor', 'Akta lahir', 'Foto', 'Lainnya'];
   const RT_EMOJI = ['💧', '💊', '🏃', '👀', '💌', '📖', '🧘', '🍎', '😴', '⭐'];
@@ -674,7 +689,7 @@
   };
   const profile = () => get('profile', 'profile') || {};
   const ownerName = () => { const p = profile(); return (p.nick || p.name || '').trim(); };
-  const relGroup = (rel) => (['Istri', 'Suami', 'Pasangan'].includes(rel) ? 'pasangan' : rel === 'Anak' ? 'anak' : ['Orang tua', 'Mertua'].includes(rel) ? 'ortu' : 'umum');
+  const relGroup = (rel) => (['Istri', 'Suami', 'Pasangan'].includes(rel) ? 'pasangan' : rel === 'Anak' ? 'anak' : ['Orang tua', 'Mertua', 'Ayah', 'Ibu', 'Kakek', 'Nenek'].includes(rel) ? 'ortu' : 'umum');
   const fillT = (s, p) => String(s).replace(/\{nama\}/g, p ? (p.nick || p.name) : 'kamu').replace(/\{saya\}/g, ownerName() || 'aku').replace(/\{sebutan\}/g, profile().callKid || 'Papa');
   const safePhoto = (s) => (typeof s === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s) ? s : '');
   const avHTML = (p, cls) => (safePhoto(p.photo) ? `<img class="av ${cls || ''}" src="${safePhoto(p.photo)}" alt="">` : `<span class="av ${cls || ''}" aria-hidden="true">${esc((p.name || '?').trim().charAt(0).toUpperCase())}</span>`);
@@ -927,9 +942,9 @@
     p = p || {};
     openForm(p.id ? 'Ubah anggota' : 'Anggota keluarga baru', [
       { k: 'name', label: 'Nama lengkap', req: true }, { k: 'nick', label: 'Panggilan' },
-      { k: 'rel', label: 'Hubungan dengan Anda', type: 'select', opts: REL.map((x) => [x, x]) },
+      { k: 'rel', label: 'Hubungan dengan Anda', type: 'select', opts: relOpts(p.rel) },
       { k: 'birth', label: 'Tanggal lahir', type: 'date' }, { k: 'phone', label: 'Nomor WhatsApp / telepon', type: 'tel' }, { k: 'notes', label: 'Catatan', type: 'textarea' },
-    ], { name: p.name, nick: p.nick, rel: p.rel || 'Istri', birth: p.birth, phone: p.phone, notes: p.notes }, (v) => {
+    ], { name: p.name, nick: p.nick, rel: p.rel || 'Anak', birth: p.birth, phone: p.phone, notes: p.notes }, (v) => {
       C.put(store, 'person', { id: p.id, name: v.name, nick: v.nick, rel: v.rel, birth: v.birth, phone: v.phone, notes: v.notes, ids: vOn() ? [] : (p.ids || []), photo: p.photo || '' }); commit();
     }, p.id ? [{ label: 'Hapus anggota & berkasnya', fn: () => {
       list('pfile').filter((f) => f.personId === p.id).forEach((f) => { IDB.del(f.id); C.remove(store, f.id); });
@@ -1100,7 +1115,7 @@
     return `<div class="row" data-a="evEdit" data-id="${o.ev.id}" data-occ="${o.date}"><div style="min-width:58px;color:var(--acc);font-weight:700">${o.ev.allDay || !o.ev.time ? 'Seharian' : esc(o.ev.time)}</div><div class="grow"><div class="t">${C.isBirthdayTitle(o.ev.title) ? '🎂 ' : ''}${esc(o.ev.title)}${o.ev.repeat && o.ev.repeat !== 'none' ? ' ↻' : ''}</div>${o.ev.notes ? `<div class="s">${esc(o.ev.notes)}</div>` : ''}</div></div>`;
   }
   const seg = (key, items, cur) => `<div class="seg" role="tablist">${items.map((i) => `<button class="${cur === i[0] ? 'on' : ''}" data-a="set" data-k="${key}" data-v="${i[0]}" role="tab" aria-selected="${cur === i[0]}">${i[1]}</button>`).join('')}</div>`;
-const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
+const APP_VERSION = '0.5.7', APP_DATE = '15 Nov 2026';
   const ABOUT_HTML = '<div class="card pad" style="text-align:center"><div class="t">RUMAHKU-ONE <span class="bd">v' + APP_VERSION + '</span></div><div class="s">Dibuat oleh <b>Illusix</b> · versi ' + APP_VERSION + ' (' + APP_DATE + '). Aplikasi ini <b>gratis</b> dan <b>dilarang diperjualbelikan</b> dalam bentuk apa pun.</div><div class="s" style="margin-top:6px">Saran &amp; masukan: <a href="mailto:trintoro@gmail.com?subject=Masukan%20RUMAHKU-ONE">trintoro@gmail.com</a></div></div>';
   const mrow = (cls, em, title, sub, to, badgeHtml) => `<div class="row" data-a="nav" data-to="${to}" style="cursor:pointer">${ic(cls, em)}<div class="grow"><div class="t">${title}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>${badgeHtml || ''}<span class="chev">›</span></div>`;
   function habitRow(x, t) {
@@ -1225,11 +1240,11 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
     const items = C.calendarItems(store, ym + '-01', next), by = {};
     items.forEach((x) => { (by[x.date] = by[x.date] || []).push(x); });
     const dotCls = { event: '', task: 't', birthday: 'b' }, dk = (x) => (x.bday ? 'birthday' : x.kind);
-    let cells = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((x) => `<div class="h">${x}</div>`).join('');
+    let cells = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((x, i) => `<div class="h ${i >= 5 ? 'wkd' : ''}">${x}</div>`).join('');
     for (let i = 0; i < lead; i++) cells += '<div class="day off"></div>';
     for (let d = 1; d <= nDays; d++) {
       const ds = ym + '-' + String(d).padStart(2, '0'), kinds = Array.from(new Set((by[ds] || []).map((x) => (dk(x) in dotCls ? dk(x) : 'other')))).slice(0, 4);
-      cells += `<button class="day ${ds === t ? 'today' : ''} ${ds === ui.calSel ? 'sel' : ''}" data-a="calSel" data-v="${ds}" aria-label="${fmtDate(ds)}">${d}<div class="dots">${kinds.map((k) => `<i class="${k === 'other' ? 'o' : dotCls[k]}"></i>`).join('')}</div></button>`;
+      cells += `<button class="day ${C.isWeekend(ds) ? 'wkd' : ''} ${ds === t ? 'today' : ''} ${ds === ui.calSel ? 'sel' : ''}" data-a="calSel" data-v="${ds}" aria-label="${fmtDate(ds)}">${d}<div class="dots">${kinds.map((k) => `<i class="${k === 'other' ? 'o' : dotCls[k]}"></i>`).join('')}</div></button>`;
     }
     let h = `<div class="inl" style="justify-content:space-between;align-items:center"><button class="btn alt sm" data-a="calPrev" aria-label="Bulan sebelumnya">‹</button><b>${ymLabel(ym)}</b><button class="btn alt sm" data-a="calNext" aria-label="Bulan berikutnya">›</button></div><div class="card pad"><div class="grid">${cells}</div></div><p class="note" style="margin:0 0 10px"><span class="lg"><i></i>acara</span> <span class="lg"><i class="t"></i>tugas</span> <span class="lg"><i class="b"></i>🎂 ulang tahun</span> <span class="lg"><i class="o"></i>tagihan, perawatan, pajak, garansi, dokumen</span></p>`;
     const sel = ui.calSel;
@@ -1249,7 +1264,7 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
     const agRow = (x) => {
       const past = isPast(x), act = x.kind === 'event' ? `data-a="evEdit" data-id="${x.id}" data-occ="${x.occ}"` : x.kind === 'task' ? 'data-a="nav" data-to="tugas"' : x.go ? `data-a="nav" data-to="${x.go}"` : `data-a="calSel" data-v="${x.date}"`;
       const sub = [x.time || (x.kind === 'event' ? 'Seharian' : ''), x.sub && x.sub !== x.time && x.sub !== 'Seharian' ? x.sub : '', past ? 'sudah lewat' : ''].filter(Boolean).map(esc).join(' · ');
-      return `<div class="row ag ${past ? 'done' : ''} ${x.date === t ? 'tdy' : ''}" ${act} style="cursor:pointer"><div class="ag-d"><b>${+x.date.slice(8)}</b><span>${DS[C.parseD(x.date).getDay()]}</span></div><div class="grow"><div class="t">${x.icon} ${esc(x.title)}</div><div class="s">${sub}</div></div></div>`;
+      return `<div class="row ag ${past ? 'done' : ''} ${x.date === t ? 'tdy' : ''}" ${act} style="cursor:pointer"><div class="ag-d ${C.isWeekend(x.date) ? 'wkd' : ''}"><b>${+x.date.slice(8)}</b><span>${DS[C.parseD(x.date).getDay()]}</span></div><div class="grow"><div class="t">${x.icon} ${esc(x.title)}</div><div class="s">${sub}</div></div></div>`;
     };
     const left = items.filter((x) => !isPast(x)).length;
     h += `<h2>Agenda ${ymLabel(ym)}</h2><div class="card">${items.length ? items.map(agRow).join('') : '<div class="empty">Belum ada agenda bulan ini. Tambahkan ulang tahun, STNK, kontrol dokter, dll.</div>'}</div><p class="note" style="margin:6px 0 10px">${items.length} agenda · ${left} belum lewat. Yang sudah lewat dicoret.</p><button class="btn full" data-a="evAdd">+ Acara baru</button>`;
@@ -1416,7 +1431,7 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
       mrow('c3', '🛒', 'Stok & belanja', 'Persediaan rumah dan daftar belanja', 'stok'), mrow('c5', '📞', 'Kontak penting', 'Tukang, dokter, darurat', 'kontak'),
       mrow('c4', '📄', 'Dokumen penting', 'KK, akta, SIM, BPJS, sertifikat, polis, ijazah', 'dokumen', vOn() ? '<span class="bd">🔒</span>' : '')])
       + g('Keluarga & hati', [mrow('c5', '👨‍👩‍👧', 'Keluarga', 'Anggota, data identitas, foto', 'keluarga'), mrow('c4', '🗂️', 'Brankas identitas', 'Foto KTP, NPWP, KK siap dikirim', 'brankas'), mrow('c3', '💌', 'Kabar & afeksi', 'Draf pesan sayang & kartu obrolan', 'afeksi'), mrow('c2', '💧', 'Rutinitas harian', 'Minum air, vitamin, dll. dengan pengingat', 'harian'), mrow('c6', '⚖️', 'Berat badan & IMT', 'Catat harian, grafik, saran sehat', 'berat')])
-      + g('Pribadi', [mrow('c4', '🗂️', 'Dokumen penting', 'KK, akta, SIM, BPJS, ijazah, sertifikat', 'dokumen', vOn() ? '<span class="bd">🔒</span>' : ''), mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
+      + g('Pribadi', [mrow('c1', '💧', 'Minum air', 'Target harian, gelas, pengingat', 'air'), mrow('c4', '🗂️', 'Dokumen penting', 'KK, akta, SIM, BPJS, ijazah, sertifikat', 'dokumen', vOn() ? '<span class="bd">🔒</span>' : ''), mrow('c2', '✅', 'Tugas', 'Daftar tugas dan pengulangan', 'tugas'), mrow('c5', '📓', 'Jurnal', 'Catatan harian & suasana hati', 'jurnal'), mrow('c6', '🌱', 'Kebiasaan', 'Centang harian dan beruntun', 'habit')])
       + g('Pengaturan', [mrow('c5', '🙂', 'Profil saya', ownerName() || 'Isi nama untuk sapaan', 'profil'), mrow('c3', '🔐', 'Kunci dokumen penting', vOn() ? (vOpen() ? 'Aktif · terbuka' : 'Aktif · terkunci') : 'Atur password agar dokumen terenkripsi', 'kunci'), mrow('c6', '🔔', 'Notifikasi', 'Izin, riwayat, ekspor ke Kalender HP', 'notif'), mrow('c3', '📤', 'Ekspor data (Excel / PDF)', 'Laporan uang & rumah untuk dicetak atau diolah', 'ekspor'), mrow('c4', '☁️', 'Sinkron & backup', 'Google Drive, ekspor/impor, notifikasi', 'setelan'), mrow('c1', '❓', 'Bantuan & data contoh', 'Cara pasang di HP, isi data contoh', 'bantuan')]);
     return { title: 'Lainnya', sub: 'v' + APP_VERSION + ' · oleh Illusix', html: h + ABOUT_HTML };
   }
@@ -1475,7 +1490,7 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
         const c = billCatOf(b), sm = BILL_STATUS[st.status] || ['', ''], tail = [];
         if (b.freq === 'weekly') tail.push('tiap ' + WEEKDAYS[+b.dueWeekday || 0][1].toLowerCase()); else tail.push('tgl ' + b.dueDay);
         if (b.amountEst) tail.push((!b.kind || b.kind === 'tagihan' ? '±' : '') + rp(b.amountEst));
-        if (+b.tenor > 0 && st.instNext) tail.push('angsuran ' + st.instNext + '/' + b.tenor); else if (+b.tenor > 0) tail.push('selesai ' + b.tenor + '/' + b.tenor);
+        if (+b.tenor > 0 && st.instNext) tail.push('angsuran ' + st.instNext + '/' + b.tenor); else if (+b.tenor > 0) tail.push('selesai ' + b.tenor + '/' + b.tenor); else if (st.instDone > 0 && st.instNext) tail.push('cicilan ke-' + st.instNext);
         if (st.remaining != null && st.remaining > 0) tail.push('sisa ' + rp(st.remaining));
         const right = st.status === 'lunas' || st.status === 'nonaktif' ? `<span class="bd">${sm[0]}</span>` : `${st.status === 'terlambat' || st.status === 'sebagian' ? `<span class="bd ${sm[1]}">${sm[0]}</span>` : st.status === 'sudah' ? `<span class="bd">${sm[0]}</span>` : badge(st.next)}<button class="btn sm" data-a="billPay" data-id="${b.id}">Bayar</button>`;
         return `<div class="row">${ic(st.status === 'terlambat' ? 'c3' : 'c6', c ? c[1] : '🧾')}<div class="grow" data-a="billOpen" data-id="${b.id}"><div class="t">${esc(b.name)}</div><div class="s">${tail.join(' · ')}</div></div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">${right}</div></div>`;
@@ -1490,13 +1505,13 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
       const kv = (k, v) => v === '' || v == null ? '' : `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
       const tenor = +b.tenor || 0, pct = tenor > 0 ? Math.min(100, Math.round((st.instDone / tenor) * 100)) : null;
       const up = []; { let d = st.next, g = 0; while (d && g++ < 3) { up.push(d); d = C.billOccAfter(b, d); const e = C.billEndDate(b); if (e && d > e) break; if (tenor && st.instDone + up.length >= tenor) break; } }
-      let h = `<div class="card hero pad"><div class="s">${c ? esc(c[2]) : 'Tagihan rutin'} · <span class="bd ${sm[1]}">${sm[0]}</span></div><div class="big">${esc(b.name)}</div>${kv('Nominal', b.amountEst ? rp(b.amountEst) : '')}${kv('Jatuh tempo berikut', st.next ? fmtDate(st.next) + ' (' + C.countdown(C.daysBetween(t, st.next)) + ')' : '—')}${tenor > 0 ? kv('Angsuran', (st.instNext ? 'ke-' + st.instNext : 'selesai') + ' dari ' + tenor) + kv('Sisa tenor', st.remainingInst + ' kali') : ''}${st.remaining != null ? kv('Sisa kewajiban', rp(st.remaining)) : ''}${+b.total > 0 ? kv('Total pinjaman / target', rp(b.total)) : ''}${+b.dp > 0 ? kv('Uang muka', rp(b.dp)) : ''}${kv('Dibayar lewat aplikasi', st.paidTotal ? rp(st.paidTotal) : '')}${+b.paidBefore > 0 ? kv('Dibayar sebelumnya', rp(b.paidBefore)) : ''}${pct != null ? `<div class="prog" style="height:8px;background:var(--soft);border-radius:99px;margin:8px 0"><div style="width:${pct}%;height:100%;background:var(--acc);border-radius:99px"></div></div><div class="s">${pct}% selesai</div>` : ''}${st.end ? kv('Selesai', fmtDate(st.end)) : ''}${kv('Kreditur', esc(b.creditor || ''))}${kv('Bank / penyedia', esc(b.bank || ''))}${b.extra ? kv('Bunga / biaya', esc(b.extra)) : ''}</div>`;
+      let h = `<div class="card hero pad"><div class="s">${c ? esc(c[2]) : 'Tagihan rutin'} · <span class="bd ${sm[1]}">${sm[0]}</span></div><div class="big">${esc(b.name)}</div>${kv('Nominal', b.amountEst ? rp(b.amountEst) : '')}${kv('Jatuh tempo berikut', st.next ? fmtDate(st.next) + ' (' + C.countdown(C.daysBetween(t, st.next)) + ')' : '—')}${tenor > 0 ? kv('Angsuran', (st.instNext ? 'ke-' + st.instNext : 'selesai') + ' dari ' + tenor) + kv('Sisa tenor', st.remainingInst + ' kali') : st.instDone > 0 ? kv('Sudah dibayar', st.instDone + ' kali') + kv('Berikutnya', 'ke-' + st.instNext) : ''}${st.remaining != null ? kv('Sisa kewajiban', rp(st.remaining)) : ''}${+b.total > 0 ? kv('Total pinjaman / target', rp(b.total)) : ''}${+b.dp > 0 ? kv('Uang muka', rp(b.dp)) : ''}${kv('Dibayar lewat aplikasi', st.paidTotal ? rp(st.paidTotal) : '')}${+b.paidBefore > 0 ? kv('Dibayar sebelumnya', rp(b.paidBefore)) : ''}${pct != null ? `<div class="prog" style="height:8px;background:var(--soft);border-radius:99px;margin:8px 0"><div style="width:${pct}%;height:100%;background:var(--acc);border-radius:99px"></div></div><div class="s">${pct}% selesai</div>` : ''}${st.end ? kv('Selesai', fmtDate(st.end)) : ''}${kv('Kreditur', esc(b.creditor || ''))}${kv('Bank / penyedia', esc(b.bank || ''))}${b.extra ? kv('Bunga / biaya', esc(b.extra)) : ''}</div>`;
       if (ref) h += `<div class="card pad inl" style="justify-content:space-between;align-items:center;gap:8px"><div><div class="s">Nomor kontrak / referensi</div><div class="t idn">${shown ? esc(ref) : esc(C.maskId(ref))}</div></div><button class="btn alt sm" data-a="idShow" data-key="${key}">${shown ? 'Sembunyikan' : 'Tampilkan'}</button></div>`;
       else if (b.refSec) h += lockCard('Nomor kontrak');
       if (C.billLive(b) && st.next) h += `<div class="card pad"><button class="btn full" data-a="billPay" data-id="${b.id}">Bayar ${st.instNext ? 'angsuran ke-' + st.instNext : 'sekarang'}</button><div style="height:8px"></div><button class="btn alt full" data-a="billPayPart" data-id="${b.id}">Bayar sebagian</button>${(tenor > 0 || +b.total > 0) ? `<div style="height:8px"></div><button class="btn alt full" data-a="billPayoff" data-id="${b.id}">Lunasi lebih awal</button>` : ''}</div>`;
       if (up.length && C.billLive(b)) h += `<h2>Jadwal berikutnya</h2><div class="card">${up.map((d, i) => `<div class="row"><div class="grow"><div class="t">${fmtDate(d)}</div><div class="s">${st.instNext ? 'Angsuran ke-' + (st.instNext + i) : 'Jatuh tempo'}</div></div>${badge(d)}</div>`).join('')}</div>`;
       h += `<h2>Riwayat pembayaran</h2><div class="card">${mine.length ? mine.map((x) => `<div class="row"><div class="grow"><div class="t">${rp(x.amount)}${x.void ? ' · dibatalkan' : ''}</div><div class="s">${fmtDate(x.date)}${x.instNo ? ' · angsuran ke-' + x.instNo : ''}${x.part ? ' · sebagian' : ''}${x.payoff ? ' · pelunasan' : ''}${x.late && !x.void ? ' · terlambat' : ''} · untuk ${fmtDate(x.occ)}</div></div>${x.void ? '' : `<button class="btn alt sm" data-a="billVoid" data-id="${x.id}">Batalkan</button>`}</div>`).join('') : '<div class="empty">Belum ada pembayaran tercatat.</div>'}</div>`;
-      h += `<div class="card pad"><button class="btn alt full" data-a="billEdit" data-id="${b.id}">Ubah template</button><div style="height:8px"></div><button class="btn alt full" data-a="billToggle" data-id="${b.id}">${b.active === false ? 'Aktifkan lagi' : 'Hentikan template (nonaktif)'}</button><div style="height:8px"></div><button class="btn bad full" data-a="billDel" data-id="${b.id}">Hapus template…</button></div>`;
+      h += `<div class="card pad">${C.billLive(b) ? `<button class="btn alt full" data-a="billShift" data-id="${b.id}" data-n="1">Geser +1 angsuran (tanpa catat bayar)</button><div style="height:8px"></div><button class="btn alt full" data-a="billShift" data-id="${b.id}" data-n="-1">Geser −1 angsuran</button><div style="height:8px"></div>` : ''}<button class="btn alt full" data-a="billEdit" data-id="${b.id}">Ubah template</button><div style="height:8px"></div><button class="btn alt full" data-a="billToggle" data-id="${b.id}">${b.active === false ? 'Aktifkan lagi' : 'Hentikan template (nonaktif)'}</button><div style="height:8px"></div><button class="btn bad full" data-a="billDel" data-id="${b.id}">Hapus template…</button></div>`;
       return { title: b.name, sub: sm[0], html: h };
     },
     riwayatbayar() {
@@ -1561,6 +1576,18 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
       const t = C.today(), hs = list('habit');
       return { title: 'Kebiasaan', sub: '', add: () => habitForm(), html: `<div class="card">${hs.length ? hs.map((x) => habitRow(x, t)).join('') : '<div class="empty">Belum ada kebiasaan.</div>'}</div><button class="btn full" data-a="habitAdd">+ Kebiasaan</button><div style="height:10px"></div><button class="btn alt full" data-a="tpl" data-k="habit">✨ Tambah dari template: olahraga, baca buku, dll</button>` };
     },
+    air() {
+      const t = C.today(), cfg = C.waterCfg(store), day = C.waterDay(store, t), hist = C.waterHistory(store, t, 7);
+      const full = Math.floor(day.ml / cfg.glassMl), n = Math.max(cfg.goal, full), extra = day.ml - full * cfg.glassMl;
+      const glasses = Array.from({ length: n }, (_, i) => `<button class="gl ${i < full ? 'on' : ''} ${i >= cfg.goal ? 'over' : ''}" data-a="waterAdd1" aria-label="Gelas ${i + 1}${i < full ? ' sudah diminum' : ' belum'}"></button>`).join('');
+      const hm = (l) => l.time || '';
+      let h = `<div class="card hero pad"><div class="s">Hari ini · target ${cfg.goal} gelas (${cfg.goalMl} ml)</div><div class="big">${day.ml} ml</div><div class="s">${full} gelas${extra > 0 ? ' + ' + extra + ' ml' : ''} · ${day.pct}%${day.reached ? ' 🎉 target tercapai' : ''}</div><div class="wbar" style="margin-top:8px"><i style="width:${Math.min(100, day.pct)}%"></i></div></div>`;
+      h += `<div class="card pad"><div class="gls">${glasses}</div><div class="btns"><button class="btn" data-a="waterAdd1">+ 1 gelas (${cfg.glassMl} ml)</button><button class="btn alt" data-a="waterMore">+ Jumlah lain</button></div><div style="height:8px"></div><button class="btn alt full" data-a="waterUndo" ${day.count ? '' : 'disabled'}>− Koreksi: batalkan catatan terakhir</button></div>`;
+      h += `<h2>Catatan hari ini</h2><div class="card">${day.logs.length ? day.logs.slice().reverse().map((l) => `<div class="row"><div class="grow"><div class="t">${l.ml} ml</div><div class="s">${esc(hm(l))}</div></div><button class="btn alt sm" data-a="waterDel" data-id="${l.id}">Batalkan</button></div>`).join('') : '<div class="empty">Belum ada catatan. Ketuk gelas untuk menambah.</div>'}</div>`;
+      h += `<h2>7 hari terakhir</h2><div class="card pad">${hist.map((x) => `<div class="kv"><span>${fmtDate(x.date)}</span><b>${x.ml} ml · ${x.pct}%</b></div><div class="wbar" style="margin:0 0 8px"><i style="width:${Math.min(100, x.pct)}%"></i></div>`).join('')}</div>`;
+      h += `<button class="btn alt full" data-a="waterCfg">⚙️ Target & pengingat</button><p class="note">Pengingat: ${cfg.on ? 'aktif ' + cfg.from + '–' + cfg.to + ' tiap ' + cfg.every + ' menit' + (cfg.quietFrom ? ', tenang ' + cfg.quietFrom + '–' + cfg.quietTo : '') : 'mati'}. Pengingat tidak dikirim setelah target tercapai. Pengingat muncul saat aplikasi terbuka/di latar; untuk pengingat saat tertutup, ekspor ke Kalender HP.</p>`;
+      return { title: 'Minum air', sub: day.ml + '/' + cfg.goalMl + ' ml', html: h };
+    },
     harian() {
       const rs = list('rt').sort((a, b) => C.cmp(a.from || '', b.from || '') || C.cmp(a.name, b.name));
       let h = rs.length ? rs.map((r) => rtCard(r)).join('') : '<div class="card"><div class="empty">Belum ada rutinitas harian.<br>Mulai dari template: minum air 2 liter, vitamin, olahraga, kabari keluarga.</div></div>';
@@ -1592,11 +1619,15 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
       return { title: 'Brankas identitas', sub: fs.length + ' berkas', html: h };
     },
     keluarga() {
-      const ps = list('person').sort((a, b) => C.cmp(a.name, b.name)), t = C.today();
-      const h = `<div class="card">${ps.length ? ps.map((p) => {
-        const age = C.ageOn(p.birth, t), bd = p.birth ? C.daysBetween(t, nextBirthday(p.birth, t)) : null;
-        return `<div class="row" data-a="personOpen" data-id="${p.id}">${avHTML(p)}<div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.rel || '')}${age != null ? ' · ' + age + ' th' : ''}${p.lastContact ? ' · dikabari ' + C.countdown(C.daysBetween(t, p.lastContact)).replace('hari ini', 'hari ini') : ''}</div></div>${bd != null && bd <= 14 ? `<span class="bd soon">🎂 ${bd === 0 ? 'hari ini' : bd + ' hari'}</span>` : ''}<span class="chev">›</span></div>`;
-      }).join('') : '<div class="empty">Belum ada anggota keluarga.<br>Tambahkan pasangan, anak, atau orang tua, lalu isi data pribadi masing-masing.</div>'}</div><button class="btn full" data-a="personAdd">+ Anggota keluarga</button><div style="height:10px"></div><button class="btn alt full" data-a="nav" data-to="afeksi">💌 Kirim kabar &amp; kata sayang</button>`;
+      const all = list('person').sort((x, y) => C.cmp(x.name, y.name)), t = C.today();
+      const tags = ['Semua'].concat(Array.from(new Set(all.map((p) => p.rel).filter(Boolean))));
+      const q = (ui.famQ || '').trim().toLowerCase(), ps = all.filter((p) => (ui.relF === 'Semua' || p.rel === ui.relF) && (!q || (p.name || '').toLowerCase().includes(q) || (p.nick || '').toLowerCase().includes(q) || (p.rel || '').toLowerCase().includes(q)));
+      let h = all.length > 3 ? `<label class="f" style="margin-bottom:8px"><input type="search" id="famq" placeholder="Cari nama atau hubungan…" value="${esc(ui.famQ || '')}" autocomplete="off"></label>` : '';
+      if (tags.length > 2) h += `<div class="chips">${tags.map((x) => `<button class="chip ${ui.relF === x ? 'on' : ''}" data-a="set" data-k="relF" data-v="${esc(x)}">${x === 'Semua' ? 'Semua' : esc(x)}</button>`).join('')}</div>`;
+      h += `<div class="card">${ps.length ? ps.map((p) => {
+        const age = C.ageOn(p.birth, t), bd = p.birth ? C.daysBetween(t, nextBirthday(p.birth, t)) : null, pa = C.phoneActions(p.phone);
+        return `<div class="row" data-a="personOpen" data-id="${p.id}">${avHTML(p)}<div class="grow"><div class="t">${esc(p.name)}</div><div class="s"><span class="bd" style="margin-right:4px">${esc(p.rel || 'Tanpa tag')}</span>${age != null ? age + ' th' : ''}${p.lastContact ? ' · dikabari ' + C.countdown(C.daysBetween(t, p.lastContact)) : ''}</div></div>${bd != null && bd <= 14 ? `<span class="bd soon">🎂 ${bd === 0 ? 'hari ini' : bd + ' hari'}</span>` : ''}${pa.ok ? `<button class="btn alt sm" data-a="waOpen" data-id="${p.id}" aria-label="WhatsApp ${esc(p.name)}">💬</button>` : ''}<span class="chev">›</span></div>`;
+      }).join('') : '<div class="empty">' + (all.length ? 'Tidak ada anggota dengan filter ini.' : 'Belum ada anggota keluarga.<br>Tambahkan pasangan, anak, atau orang tua, lalu isi data pribadi masing-masing.') + '</div>'}</div><button class="btn full" data-a="personAdd">+ Anggota keluarga</button><div style="height:10px"></div><button class="btn alt full" data-a="nav" data-to="afeksi">💌 Kirim kabar &amp; kata sayang</button>`;
       return { title: 'Keluarga', sub: ps.length + ' anggota', html: h, add: () => personForm() };
     },
     orang(pp) {
@@ -1604,7 +1635,7 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
       const t = C.today(), files = list('pfile').filter((f) => f.personId === p.id).sort((a, b) => C.cmp(a._u, b._u)), age = C.ageOn(p.birth, t);
       let h = `<div class="card pad"><div style="display:flex;gap:14px;align-items:center">${avHTML(p, 'lg')}<div class="grow"><div class="t" style="font-size:1.15rem">${esc(p.name)}</div><div class="s">${esc(p.rel || '')}${p.nick ? ' · "' + esc(p.nick) + '"' : ''}${age != null ? ' · ' + age + ' tahun' : ''}</div></div></div>
         ${p.birth ? `<div class="kv"><span>Lahir</span><b>${fmtDate(p.birth)}</b></div>` : ''}${p.phone ? `<div class="kv"><span>Telepon</span><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ''))}"><b>${esc(p.phone)}</b></a></div>` : ''}${p.notes ? `<div class="kv"><span>Catatan</span><span>${esc(p.notes)}</span></div>` : ''}
-        <div class="btns" style="margin-top:12px"><button class="btn" data-a="personKabar" data-id="${p.id}">💌 Kabari</button><button class="btn alt" data-a="personEdit" data-id="${p.id}">Ubah</button><button class="btn alt" data-a="personPhoto" data-id="${p.id}">📷 Foto profil</button></div></div>`;
+        ${C.phoneActions(p.phone).tel ? `<div class="btns" style="margin-top:12px">${C.phoneActions(p.phone).ok ? `<button class="btn" data-a="waOpen" data-id="${p.id}">💬 WhatsApp</button>` : ''}<a class="btn alt" href="tel:${C.phoneActions(p.phone).tel}">📞 Telepon</a><a class="btn alt" href="sms:${C.phoneActions(p.phone).tel}">✉️ SMS</a></div>${C.phoneActions(p.phone).ok ? '' : '<div class="s" style="margin-top:6px">Nomor ini tidak dikenali sebagai ponsel: WhatsApp dinonaktifkan.</div>'}` : ''}<div class="btns" style="margin-top:12px"><button class="btn" data-a="personKabar" data-id="${p.id}">💌 Kabari</button><button class="btn alt" data-a="personEdit" data-id="${p.id}">Ubah</button><button class="btn alt" data-a="personPhoto" data-id="${p.id}">📷 Foto profil</button></div></div>`;
       const locked = vOn() && !vOpen(), ids = idsOf(p);
       if (locked) h += '<h2>Data identitas &amp; berkas</h2>' + lockCard('Data identitas dan foto berkas');
       else h += `<h2>Data identitas</h2><div class="card">${ids.length ? ids.map((e, i) => {
@@ -1780,6 +1811,11 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
     billAdd() { billCatMenu(); }, billTpl() { billTemplateForm(); }, billEdit(d) { billForm(get('bill', d.id)); }, billPay(d) { const b = get('bill', d.id); if (b) billPayForm(b, 'full'); },
     billPayPart(d) { const b = get('bill', d.id); if (b) billPayForm(b, 'part'); }, billPayoff(d) { const b = get('bill', d.id); if (b) billPayForm(b, 'payoff'); },
     billOpen(d) { go('tagihandetail', { id: d.id }); }, billVoid(d) { billVoidConfirm(d.id); }, billDel(d) { const b = get('bill', d.id); if (b) billDeleteConfirm(b); },
+    billShift(d) { const b = get('bill', d.id); if (!b) return; const n = +d.n || 1, tenor = +b.tenor || 0; const cur = +b.instBefore || 0, nx = cur + n;
+      if (nx < 0) return toast('Sudah di angsuran paling awal.');
+      const pays = list('bpay').filter((p) => p.billId === b.id && !p.void).length;
+      if (tenor && nx + pays > tenor) return toast('Sudah mencapai tenor (' + tenor + ').');
+      setTimeout(() => confirmBox((n > 0 ? 'Geser maju 1 angsuran' : 'Geser mundur 1 angsuran') + ' untuk "' + b.name + '"? Ini hanya mengubah hitungan angsuran, TIDAK mencatat pembayaran/transaksi.', () => { C.put(store, 'bill', { id: b.id, instBefore: nx }); commit(); toast('Angsuran digeser: sekarang ke-' + (nx + pays + 1)); }), 0); },
     billToggle(d) { const b = get('bill', d.id); if (!b) return; C.put(store, 'bill', { id: b.id, active: b.active === false }); commit(); toast(b.active === false ? 'Template aktif lagi' : 'Template dihentikan; tidak ada jadwal baru'); },
     assetAdd() { assetForm(); }, assetEdit(d) { assetForm(get('asset', d.id)); },
     invAdd() { invForm(); }, invEdit(d) { invForm(get('inv', d.id)); },
@@ -1819,6 +1855,31 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
     rtAdd() { routineForm(); }, rtTpl() { rtTemplateForm(); }, rtEdit(d) { routineForm(get('rt', d.id)); },
     rtInc(d) { rtBump(d.id, 1); }, rtDec(d) { rtBump(d.id, -1); },
     profilEdit() { profilForm(); },
+    // WhatsApp: pesan awal bisa diedit; tidak dikirim otomatis (pengguna tetap menekan Kirim di WhatsApp). Nomor tidak dicatat/dikirim ke server.
+    waOpen(d) {
+      const p = get('person', d.id); if (!p || !C.phoneActions(p.phone).ok) return toast('Nomor WhatsApp tidak valid');
+      openForm('WhatsApp ke ' + (p.nick || p.name), [{ k: 'msg', label: 'Pesan awal (boleh dikosongkan / diubah)', type: 'textarea' }], { msg: 'Halo ' + (p.nick || p.name) + ', ' }, (v) => {
+        const url = C.waUrl(p.phone, v.msg); if (!url) return 'Nomor tidak valid.';
+        window.open(url, '_blank', 'noopener'); toast('Membuka WhatsApp… tekan Kirim di sana');
+      }, null, 'Pesan tidak terkirim otomatis. WhatsApp akan terbuka dan Anda yang menekan Kirim.');
+    },
+    waterAdd1() { const n = Date.now(); if (n - (ui.waterLast || 0) < 700) return; ui.waterLast = n; const d = new Date(); C.waterAdd(store, C.waterCfg(store).glassMl, C.today(d), C.fmtHM(d.getHours() * 60 + d.getMinutes())); commit(); },
+    waterMore() { openForm('Tambah air', [{ k: 'ml', label: 'Jumlah (ml)', type: 'number', req: true }], { ml: C.waterCfg(store).glassMl }, (v) => { const d = new Date(); if (!C.waterAdd(store, +v.ml, C.today(d), C.fmtHM(d.getHours() * 60 + d.getMinutes()))) return 'Isi 1–5000 ml.'; commit(); }); },
+    waterUndo() { if (C.waterUndoLast(store, C.today())) { commit(); toast('Catatan terakhir dibatalkan'); } },
+    waterDel(d) { const l = get('wlog', d.id); if (l) { C.put(store, 'wlog', { id: l.id, void: true }); commit(); } },
+    waterCfg() {
+      const c = C.waterCfg(store);
+      openForm('Target & pengingat minum air', [
+        { k: 'goal', label: 'Target harian (gelas)', type: 'number', req: true }, { k: 'glassMl', label: 'Volume per gelas (ml)', type: 'number', req: true },
+        { k: 'on', label: 'Aktifkan pengingat', type: 'check' }, { k: 'from', label: 'Mulai mengingatkan', type: 'time' }, { k: 'to', label: 'Selesai mengingatkan', type: 'time' },
+        { k: 'every', label: 'Interval (menit, min. 15)', type: 'number' }, { k: 'quietFrom', label: 'Jam tenang mulai (opsional)', type: 'time' }, { k: 'quietTo', label: 'Jam tenang selesai', type: 'time' },
+      ], { goal: c.goal, glassMl: c.glassMl, on: c.on, from: c.from, to: c.to, every: c.every, quietFrom: c.quietFrom, quietTo: c.quietTo }, (v) => {
+        const g = +v.goal, gm = +v.glassMl, ev = +v.every || 60;
+        if (!(g >= 1 && g <= 40)) return 'Target 1–40 gelas.'; if (!(gm >= 50 && gm <= 2000)) return 'Volume gelas 50–2000 ml.'; if (ev < 15) return 'Interval minimal 15 menit.';
+        if (v.from && v.to && v.to < v.from) return 'Jam selesai harus sesudah jam mulai.'; if ((v.quietFrom && !v.quietTo) || (!v.quietFrom && v.quietTo)) return 'Isi kedua jam tenang atau kosongkan keduanya.';
+        C.put(store, 'wcfg', { id: 'wcfg', goal: g, glassMl: gm, on: !!v.on, from: v.from || '08:00', to: v.to || '20:00', every: ev, quietFrom: v.quietFrom || '', quietTo: v.quietTo || '' }); commit(); toast('Disimpan. Riwayat lama tidak berubah.');
+      });
+    },
     personAdd() { personForm(); }, personEdit(d) { personForm(get('person', d.id)); }, personOpen(d) { go('orang', { id: d.id }); },
     personKabar(d) { ui.afTab = 'kabar'; ui.afWho = d.id; go('afeksi'); },
     personPhoto(d) {
@@ -1896,6 +1957,7 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
     const t = e.target.closest('[data-a]'); if (!t || !A[t.dataset.a]) return;
     if (t.closest('dialog') == null) A[t.dataset.a](t.dataset, e);
   });
+  ['change', 'search'].forEach((ev) => document.addEventListener(ev, (e) => { if (e.target && e.target.id === 'famq') { ui.famQ = e.target.value; render(); const i = document.getElementById('famq'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } } }));
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const t = e.target.closest && e.target.closest('.tile[data-a]'); if (t) { e.preventDefault(); A[t.dataset.a](t.dataset); }
@@ -2003,6 +2065,7 @@ const APP_VERSION = '0.5.6', APP_DATE = '15 Nov 2026';
     const fire = (key, body) => { if (fired.has(key)) return; fired.add(key); changed = true; notify('RUMAHKU', detailOn() ? body : 'Ada pengingat', key); };
     const logs = list('rtlog').filter((l) => l.date === t);
     list('rt').forEach((r) => { const d = C.routineDue(r, t, mins, C.routineDone(logs, r.id, t), fired); if (d) fire(d.key, (r.emoji || '🔔') + ' ' + r.name + ' — ' + d.done + '/' + d.target + (r.unit ? ' ' + r.unit : '')); });
+    const wd = C.waterDue(store, t, mins, fired); if (wd) fire(wd.key, '💧 Waktunya minum — ' + Math.round(wd.glasses) + '/' + wd.goal + ' gelas');
     list('task').forEach((x) => {
       if (x.done || x.due !== t || !x.time || x.remind === '' || x.remind == null) return;
       if (C.inWindow(nowMs, C.fireAt(t, x.time, x.remind))) fire('tk|' + x.id + '|' + t + '|' + x.time + '|' + x.remind, '✅ ' + x.title + (+x.remind > 0 ? ' — ' + x.remind + ' menit lagi' : ' — sekarang'));
